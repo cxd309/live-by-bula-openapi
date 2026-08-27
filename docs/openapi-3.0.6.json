@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Live! by BULA JSON API",
-    "version": "1.9.17",
-    "summary": "Unofficial specification for the JSON data files behind Live! by BULA 1.9.17",
-    "description": "Unofficial specification for the static JSON files published by [Live! by BULA](https://beachultimate.org/livebybula/), the public results interface that sits on top of [UltiOrganizer](https://github.com/ktolonen/ultiorganizer).\n\nUltiOrganizer is the database and the web admin; Live! is the layer that adds a modern front end and this JSON API. Most field names come from UltiOrganizer's schema, which is why they read as lower-case run-together words (`teamname`, `fedinavg`, `spiritgiven`).\n\n## Which deployments this covers\n\nThis document describes **Live! 1.9.17**, the newest release on the 1.9 line. Check `app_version` in `_heartbeat.json` before trusting it.\n\n**1.9.14 to 1.9.16 are not covered** - use the 1.9.14 specification for those. They differ from this document in three ways, all in `TeamManager` and `GameManager`:\n\n| Change                        | Effect                                                                      |\n| ----------------------------- | --------------------------------------------------------------------------- |\n| `teams[].reg_id` **added**    | Always present here, and always absent below                                 |\n| `games[].time_utc` **added**  | Present on every scheduled game here, and absent below                       |\n| `seed.sotg_token` **removed** | Gone here, published in the public feed on 1.9.16 and below                  |\n\nIf you have a response but not its `app_version`, those three fields identify the line unambiguously.\n\nThe `sotg_token` removal is a privacy fix: on 1.9.16 and older the team's spirit-submission token is served to anyone who fetches the team-detail file.\n\n## Scope\n\nOnly the static `{seasonId}_*.json` files are specified. They send `Access-Control-Allow-Origin: *`, so they are the only transport a browser on another origin can use.\n\nLive! also exposes a dynamic endpoint at `config.BASE_API_URL` (`index.php?view=live/api&entity=…`) which is what actually builds these files. It returns the same bodies, but sends no CORS headers, so it is unusable cross-origin and is not specified here. Each path below names the entity it corresponds to, should you need to reach it server-side.\n\n## Conventions\n\n- Booleans are integers `0` / `1`, marked `x-boolean-int` below. The heartbeat is the exception and uses real JSON booleans.\n- Timestamps are `YYYY-MM-DD HH:MM:SS` with no zone marker, in tournament-local time (see `season.timezone` and `season.utcOffset`).\n- In-game `time` values are seconds elapsed since the start of the game, not clock times.\n- Ids are integers that are unique only within one season, and their range is not predictable. A dedicated install numbers each season from 1; a shared install hosting several events continues from wherever the previous one finished. `country_id` is the exception, coming from a shared table in the 1000s.\n- Id ranges overlap across entity types, so the same number can be a valid pool id, series id, game id and team id at once. Never infer a type from a value.\n- Numeric strings are coerced to numbers throughout, **except** for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`, which are always left as strings. This is why `games[].name` arrives as `\"534\"` rather than `534`.\n- Fields are usually absent rather than null, so treat almost everything as optional. The games list is the strongest case: every `null`, `0`, `\"0\"` and `false` is stripped before the response is sent, so an absent field there may mean either \"unset\" or \"zero\".\n\nLive! by BULA is © BULA Ltd. Neither BULA nor UltiOrganizer has published, endorsed or reviewed this specification, and the API may break without warning.\n",
+    "version": "3.0.6",
+    "summary": "Unofficial specification for the Live! by BULA 3.0.6 JSON API",
+    "description": "Unofficial specification for the JSON API published by [Live! by BULA](https://beachultimate.org/livebybula/), the public results interface that sits on top of [UltiOrganizer](https://github.com/ktolonen/ultiorganizer). Both the static data files and the routed endpoint are documented here.\n\nUltiOrganizer is the database and the web admin; Live! is the layer that adds a modern front end and this JSON API. Most field names come from UltiOrganizer's schema, which is why they read as lower-case run-together words (`teamname`, `fedinavg`, `spiritgiven`).\n\n## Coverage\n\nThis document describes **Live! 3.0.6**, which runs on UltiOrganizer 4. Check `app_version` in `_heartbeat.json` before trusting it - and read it from the heartbeat specifically, because `meta.app_version` inside the payloads is unreliable: the only public 3.0 deployment reports `3.0.6` in its heartbeat and `dev` in every `meta` block.\n\n### Changes from 1.9.17\n\n- `live/api.php` and `live/vote.php` no longer respond. Requests to them return an empty HTTP 404. All dynamic access goes through the routed URL.\n- Errors are now JSON with real status codes - `400`, `403`, `503` - where 1.9 mostly returned `200` or nothing useful.\n- Spirit is no longer fixed at five categories. See **Conventions**.\n\n## Access methods\n\nThe same payloads are published twice, and this document specifies both.\n\nServer-side, prefer the routed endpoint. In a browser, you have only the static files, and should expect them to disappear after the event. The response bodies are identical either way, and every schema below is shared between the two.\n\nOne entity is routed-only: `config` is not cached to disk on 3.0, so `{seasonId}_config.json` returns 404 even while the event is live.\n\n### Static files\n\n`{seasonId}_*.json` under `config.STATIC_CACHE_BASE_URL` - send `Access-Control-Allow-Origin: *`, so they are the only transport a browser on another origin can use. But Live!'s own documentation calls them an internal cache rather than a stable interface, and removes them once the configured event stops being publicly available. A client built on them will one day get 404s for files that worked the day before.\n\n### Routed endpoints\n\n`config.BASE_API_URL`, i.e. `index.php?view=live/api&entity=…` - is the interface Live! documents and intends you to use. It applies the event publication rules, returns the documented error codes, and does not vanish. It sends **no CORS headers**, so it cannot be called from a browser on another origin.\n\n## Conventions\n\n- **Spirit categories are variable.** Where 1.9 always sent `cat1` to `cat5`, 3.0 sends `cat1` to `catN` for however many categories the season defines. The authoritative list is `season.spiritCategories` in the reference response, which gives each category's key, label, permitted range and weighting. Derive your columns from it and never assume five. A score of `0` is a real submitted value here, not a placeholder for \"not submitted\".\n- Booleans are integers `0` / `1`, marked `x-boolean-int` below. The heartbeat is the exception and uses real JSON booleans.\n- Timestamps are `YYYY-MM-DD HH:MM:SS` with no zone marker, in tournament-local time (see `season.timezone` and `season.utcOffset`). `games[].time_utc` carries the same instant in UTC and handles daylight saving correctly.\n- In-game `time` values are seconds elapsed since the start of the game, not clock times.\n- Ids are integers, unique only within one season, and their range is not predictable. **3.0 validates them against the configured event**: asking the routed endpoint for an id belonging to a different event returns `400` rather than data. Ids stored between tournaments must be refreshed from the reference endpoint.\n- Id ranges overlap across entity types, so the same number can be a valid pool, series, game and team id at once. Never infer a type from a value.\n- Numeric strings are coerced to numbers throughout, **except** for `name`, `fieldname`, `abbreviation`, `cache_version`, `app_version` and `pools`, which are always left as strings. This is why `games[].pools` arrives as `\"1016\"` rather than `1016`.\n- Fields are usually absent rather than null, so treat almost everything as optional. The games list is the strongest case: every `null`, `0`, `\"0\"` and `false` is stripped before the response is sent, so an absent field there may mean either \"unset\" or \"zero\".\n\nLive! by BULA is © BULA Ltd. Neither BULA nor UltiOrganizer has published, endorsed or reviewed this specification, and the API may break without warning.\n",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -13,14 +13,14 @@
   "servers": [
     {
       "url": "{origin}{basePath}",
-      "description": "Any Live! 1.9.17 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WMUCC 2026 deployment.\n",
+      "description": "The static files on any Live! 3.0 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WUCC 2026 deployment. The routed endpoint has its own server entry, on the `/index.php` path.\n",
       "variables": {
         "origin": {
-          "default": "https://wmucc.wfdf.sport",
+          "default": "https://results.wfdf.sport",
           "description": "Scheme and host of the deployment."
         },
         "basePath": {
-          "default": "/live/data",
+          "default": "/wucc-2026/live/data",
           "description": "`config.STATIC_CACHE_BASE_URL` from the heartbeat, without its trailing slash."
         }
       }
@@ -53,11 +53,11 @@
     },
     {
       "name": "players",
-      "description": "Player ids and aggregated player statistics."
+      "description": "Player ids, per-player scoring events, and aggregated player statistics."
     },
     {
-      "name": "config",
-      "description": "The deployment's full configuration, wider than the heartbeat's copy."
+      "name": "routed",
+      "description": "The dynamic endpoint. Same payloads as the static files, with real error codes and no CORS."
     }
   ],
   "paths": {
@@ -68,7 +68,7 @@
           "heartbeat"
         ],
         "summary": "Season id, base URLs and deployment configuration",
-        "description": "The entry point, and the only file whose path you can know without asking. Everything else is built from it.\n\n`config.LIVE_SEASON_ID` is the filename prefix for every other endpoint, and `config.STATIC_CACHE_BASE_URL` is the path they hang off. Season id casing varies by deployment (`wmucc2026` lower-case, `26EYUCVIE` upper-case) and must be used verbatim.\n\nThe front end re-reads this every `config.TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS` seconds. `cache_version` changes whenever the upstream data is rebuilt, so comparing it is a cheap way to detect new data without refetching everything.\n\nUnlike every other response, this document has **no** `meta` block. Its equivalent dynamic entity is `hb`, which returns only the outer three fields without `config`.\n\nTwo things changed here in 1.9.17, both worth relying on:\n\n- The file is served with `Cache-Control: no-cache, must-revalidate`, so a configuration change is picked up immediately rather than sitting behind a browser cache. Older releases send no cache directive at all.\n- The `config` block now survives a heartbeat rewrite. On 1.9.16 and older, wiping the cache or refreshing the heartbeat rewrote this file with only `app_version`, `cache_version` and `last_updated_utc`, **discarding `config` entirely** until something re-ran the configuration writer. A deployment on an older release can therefore serve a heartbeat with no `config` block at all, which leaves a client with no season id and no base path to work from.\n",
+        "description": "The entry point, and the only file whose path you can know without asking. Everything else is built from it.\n\n`config.LIVE_SEASON_ID` is the filename prefix for every other endpoint, and `config.STATIC_CACHE_BASE_URL` is the path they hang off. Season id casing varies by deployment (`wmucc2026` lower-case, `26EYUCVIE` upper-case) and must be used verbatim.\n\nThe front end re-reads this every `config.TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS` seconds. `cache_version` changes whenever the upstream data is rebuilt, so comparing it is a cheap way to detect new data without refetching everything.\n\nUnlike every other response, this document has **no** `meta` block. Its equivalent dynamic entity is `hb`, which returns only the outer three fields without `config`.\n\n**Read `app_version` from here, not from a payload's `meta`.** The two disagree on the only public 3.0 deployment: the heartbeat says `3.0.6` while every `meta.app_version` says `dev`. The heartbeat value is the one written at deploy time and the one to trust.\n\nAn empty or cold heartbeat is not an error on 3.0 - it means the cache has not been built yet. Retry rather than treating it as a failure.\n\nThis file is still a static file, so unlike the payloads it survives independently of the routed endpoint. Its dynamic equivalent is `entity=hb`.\n",
         "responses": {
           "200": {
             "description": "The deployment's version, cache state and configuration",
@@ -95,7 +95,7 @@
           "reference"
         ],
         "summary": "The event, its divisions, pools, teams, countries and fields",
-        "description": "Everything structural about the event in one request, and the file to fetch after the heartbeat. Ids used by every other endpoint are defined here.\n\nThe five collections are independent lists joined by id: a team names its `series` and `country`, and a pool names its `series_id`. There is no nesting.\n\nThis is slow-moving data. Only `teams[].final_standing_calculated` changes as an event progresses; everything else is usually fixed once the schedule is published.\n\nDynamic entity: `reference`. Server-side cache lifetime 300 seconds.\n",
+        "description": "Everything structural about the event in one request, and the file to fetch after the heartbeat. Ids used by every other endpoint are defined here.\n\nThe five collections are independent lists joined by id: a team names its `series` and `country`, and a pool names its `series_id`. There is no nesting.\n\nThis is slow-moving data. `teams[].final_standing_calculated` and `pool_placements[].placement` change as an event progresses; everything else is usually fixed once the schedule is published.\n\nTwo collections are new in 3.0. `season.spiritCategories` defines the spirit categories the event uses and is what makes the variable `catN` fields elsewhere readable. `pool_placements` gives each team's resolved position in each pool it belongs to, computed by UltiOrganizer's own standings logic - which is the structured standings data the 1.9 line never exposed, since its standings endpoint returned only rendered HTML.\n\nDynamic entity: `reference`. Server-side cache lifetime 300 seconds.\n",
         "responses": {
           "200": {
             "description": "The event's structure and entrants",
@@ -152,7 +152,7 @@
           "teams"
         ],
         "summary": "One team - squad list, player stats, and spirit given and received",
-        "description": "The richest per-team endpoint, and the only place a squad list appears. `players[]` carries every rostered player with their event totals already aggregated, so player statistics do not require crawling every game.\n\n`spiritgiven` is the only place in the API showing what a team *awarded* its opponents rather than what it received, which is what you need to spot harsh or generous raters.\n\nBoth spirit arrays name the **opponent**, never the team itself: `spiritgiven[].givento` and `spiritreceived[].givenby` both hold the other team's name. Direction comes from which array a record is in, not from its fields.\n\nThe spirit blocks are only present when the event has spirit scoring both enabled and public (`season.spirit` is `1`). Comments are blanked to `null` unless the event also enables spirit comments.\n\n**`seed.sotg_token` is removed in 1.9.17** and is not present here. On 1.9.16 and older this response published the team's spirit-submission token to anyone who fetched the file, so its absence is the clearest single marker that a deployment is on this release or later.\n\nDynamic entity: `teams` with `id={teamId}`. Server-side cache lifetime 120 seconds.\n",
+        "description": "The richest per-team endpoint, and the only place a squad list appears. `players[]` carries every rostered player with their event totals already aggregated, so player statistics do not require crawling every game.\n\n`spiritgiven` is the only place in the API showing what a team *awarded* its opponents rather than what it received, which is what you need to spot harsh or generous raters.\n\nBoth spirit arrays name the **opponent**, never the team itself: `spiritgiven[].givento` and `spiritreceived[].givenby` both hold the other team's name. Direction comes from which array a record is in, not from its fields.\n\nThe spirit blocks are only present when the event has spirit scoring both enabled and public (`season.spirit` is `1`). Comments are blanked to `null` unless the event also enables spirit comments.\n\nThree things about spirit changed in 3.0. `spiritstats` and `spirittotal` are now single-field objects - a game count and a total, nothing else. The per-category detail moved into the `spiritgiven` and `spiritreceived` rows, which gained `time`, `spiritmode`, `is_complete` and `is_visible`. And those rows only appear for games where **both** teams have submitted and the game is cleared for publication, so the arrays can be shorter than the team's games played.\n\nAsking for a team id that does not exist returns `{\"error\": \"Team not found\"}` rather than an empty object.\n\nDynamic entity: `teams` with `id={teamId}`. Server-side cache lifetime 120 seconds.\n",
         "responses": {
           "200": {
             "description": "One team's roster, record and spirit detail",
@@ -179,7 +179,7 @@
           "games"
         ],
         "summary": "Every game in the event, with scores but no detail",
-        "description": "The full schedule and every result in one file. This is the largest of the routine endpoints - expect a few hundred kilobytes at a full international event.\n\n**Falsy fields are stripped.** Every value that is `null`, `0`, `\"0\"` or `false` is removed before the response is sent, so an absent field here is ambiguous between \"unset\" and \"zero\". Empty strings survive, which is why `liveurl` sometimes appears as `\"\"`. The one exception is that `homescore` and `visitorscore` are put back for any game that is not `scheduled`, so a genuine 0-0 in progress is still reported.\n\nBecause of that stripping, the absence of `isongoing` is how you tell a game is not live; `status` is the field to read instead.\n\n`visitorsotg` is present here - the opponent's spirit score for the game - while `homesotg` is stripped. Do not read anything into the asymmetry; the field is not deliberately published.\n\n**`time_utc` is new in 1.9.17** and is the field to schedule against. It is computed per game from `season.timezone` with full daylight-saving handling, which makes it more trustworthy than applying `season.utcOffset` yourself - that offset is a single value fixed for the whole event, so it is wrong on either side of a clock change. `time_utc` is added after the falsy stripping described above, so it is never removed, but it is omitted for any game with no `time` and for the whole endpoint if the season's timezone is missing or unrecognised.\n\nDynamic entity: `games`. Cache lifetime varies from 1.5 minutes during the event to 60 minutes more than 72 hours either side of it.\n",
+        "description": "The full schedule and every result in one file. This is the largest of the routine endpoints - expect a few hundred kilobytes at a full international event.\n\n**Falsy fields are stripped.** Every value that is `null`, `0`, `\"0\"` or `false` is removed before the response is sent, so an absent field here is ambiguous between \"unset\" and \"zero\". Empty strings survive, which is why `liveurl` sometimes appears as `\"\"`. The one exception is that `homescore` and `visitorscore` are put back for any game that is not `scheduled`, so a genuine 0-0 in progress is still reported.\n\nBecause of that stripping, the absence of `isongoing` is how you tell a game is not live; `status` is the field to read instead.\n\n**`status` means something different from 1.9.** A game is `completed` once it has started and is no longer ongoing, taken from UltiOrganizer 4's own started flag. On 1.9 a game only became `completed` when someone scored, so genuine 0-0 results and forfeits stayed `scheduled` for ever. Both now report `completed`, which also changes the spirit averages derived from them.\n\nSpirit scores are **not** published here. 1.9 leaked `visitorsotg` into this list; 3.0 does not send either team's score, and applies UltiOrganizer 4's visibility rules before publishing them anywhere.\n\n`time_utc` carries the same instant as `time` in UTC, computed per game with real timezone handling. Prefer it over applying `season.utcOffset`, which is one fixed value for the whole event and wrong either side of a clock change. It is added after the falsy stripping, so it is never removed, but it is omitted for a game with no `time`.\n\n`pool` is the **owning** pool, and a game can belong to several. `pools` lists them all. For a crossover this can differ from the value 1.9 reported for the same fixture.\n\nDynamic entity: `games`. Cache lifetime varies from 1.5 minutes during the event to 60 minutes more than 72 hours either side of it.\n",
         "responses": {
           "200": {
             "description": "Every game in the season",
@@ -296,7 +296,7 @@
           "spirit"
         ],
         "summary": "One division's spirit leaderboard",
-        "description": "Every team in a division with its **mean** score in each of the five Spirit of the Game categories and its mean total, ordered by total descending.\n\nThese are averages per game, not sums, which is what makes them comparable between teams that have played different numbers of games. Category means are typically fractional; `total` is the mean of the per-game totals, out of 20.\n\nThis is the aggregated view. For the underlying per-game scores use the team-detail endpoint, which also distinguishes what a team gave from what it received.\n\n**Returns an empty object** - no `spirit` key at all - when the event does not publish spirit points. Check `season.spirit` in the reference response before fetching.\n\nDynamic entity: `spirit` with `id={seriesId}`. Server-side cache lifetime 120 seconds.\n",
+        "description": "Every team in a division with its **mean** score in each of the five Spirit of the Game categories and its mean total, ordered by total descending.\n\nThese are averages per game, not sums, which is what makes them comparable between teams that have played different numbers of games. Category means are typically fractional; `total` is the mean of the per-game totals, out of 20.\n\nThis is the aggregated view. For the underlying per-game scores use the team-detail endpoint, which also distinguishes what a team gave from what it received.\n\nThe `teamvalid` field that 1.9 sent is **gone**. Teams whose submissions average to zero are now included rather than filtered out, and ties on `total` are broken alphabetically by team name.\n\n**Returns an empty object** - no `spirit` key at all - when the event does not publish spirit points. Check `season.spirit` in the reference response before fetching.\n\nDynamic entity: `spirit` with `id={seriesId}`. Server-side cache lifetime 120 seconds.\n",
         "responses": {
           "200": {
             "description": "The division's spirit leaderboard, or an empty object if spirit is not published",
@@ -368,26 +368,29 @@
         }
       }
     },
-    "/{seasonId}_config.json": {
+    "/{seasonId}_playerevents_{playerId}.json": {
       "parameters": [
         {
           "$ref": "#/components/parameters/SeasonId"
+        },
+        {
+          "$ref": "#/components/parameters/PlayerId"
         }
       ],
       "get": {
-        "operationId": "getConfig",
+        "operationId": "getPlayerEvents",
         "tags": [
-          "config"
+          "players"
         ],
-        "summary": "The deployment's full configuration, plus where each setting came from",
-        "description": "A superset of the heartbeat's `config` block. Everything there appears here with the same value, and this endpoint adds the three keys the heartbeat strips - `LIVE_ALLOWED_ENTITIES`, `IS_DEV` and `BEACH_ULTIMATE_SHOWCASE_AFTER_TOURNAMENT` - along with a `sourceInfo` map and a `meta` block.\n\n`LIVE_ALLOWED_ENTITIES` is the useful one: it lists every entity the dynamic API will serve and its server-side cache lifetime in seconds, which is where the cache figures quoted throughout this document come from. Reading it is more reliable than trusting them, since a deployment can override the defaults.\n\n`sourceInfo` says whether each setting is a built-in default, set through the admin interface, set in PHP, or forced. Useful for telling a deliberately configured value from one nobody has touched.\n\n**Prefer the heartbeat for ordinary use.** This file is bigger, is not what the front end reads for configuration, and carries nothing extra that a results client needs. It was returned by every 1.9.x deployment checked, but it is a by-product of the cache rather than a designed public endpoint, so treat it as best-effort.\n\nDynamic entity: `config`. Note that the related `config_static` entity is not a data endpoint - it issues a redirect to `_heartbeat.json`.\n",
+        "summary": "One player's goals and assists, game by game",
+        "description": "**New in 3.0.** There was no per-player endpoint on the 1.9 line at all.\n\nEvery goal the player scored or assisted, grouped by game, with the running score at each one and the other player involved named. This is the only place a single player's scoring history is assembled; on 1.9 you had to crawl every game detail file to build it.\n\nGames the player featured in but did not score or assist in do not appear, so the length of `games` is not their appearance count - use `games` on the statistics or team-detail endpoints for that.\n\nDynamic entity: `playerevents` with `id={playerId}`.\n",
         "responses": {
           "200": {
-            "description": "The deployment's full configuration and the provenance of each setting",
+            "description": "One player's scoring events across the event",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigResponse"
+                  "$ref": "#/components/schemas/PlayerEventsResponse"
                 }
               }
             }
@@ -415,6 +418,179 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TopStatisticsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/index.php": {
+      "servers": [
+        {
+          "url": "{origin}{uoPrefix}",
+          "description": "The UltiOrganizer install this Live! instance sits in. `uoPrefix` is `config.UO_URL_PREFIX` from the heartbeat, without its trailing slash - an empty string when Live! is at the site root.\n",
+          "variables": {
+            "origin": {
+              "default": "https://results.wfdf.sport",
+              "description": "Scheme and host of the deployment."
+            },
+            "uoPrefix": {
+              "default": "/wucc-2026",
+              "description": "`config.UO_URL_PREFIX` from the heartbeat, without its trailing slash."
+            }
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getEntity",
+        "tags": [
+          "routed"
+        ],
+        "summary": "The dynamic endpoint - every payload, with real error codes and no CORS",
+        "description": "The interface Live! documents and intends external clients to use. It returns the same bodies as the static files, but applies the event's publication rules and answers with proper status codes, and it does not disappear when the event ends.\n\n**It sends no CORS headers**, so a browser on another origin cannot call it. That is not an oversight you can work around; use the static files there instead, and accept that they are temporary.\n\n`entity` selects the payload and maps one-to-one onto the static filenames: `entity=teams&id=5` is `{seasonId}_teams_5.json`. `standings` and `playerevents` require an `id`; `games` accepts a game id or the literal `active`; `statistics` accepts a series id or the literal `top`.\n\nTwo entities are only available here, because 3.0 does not cache them to disk: `config`, which returns the full configuration plus the provenance of each setting, and `hb`, which returns the heartbeat.\n\nRequests sent straight to `live/api.php` rather than through this front controller return an empty HTTP 404.\n",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": true,
+            "description": "Selects Live!'s API controller. Always this exact value.",
+            "schema": {
+              "type": "string",
+              "const": "live/api"
+            },
+            "example": "live/api"
+          },
+          {
+            "name": "entity",
+            "in": "query",
+            "required": true,
+            "description": "Which payload to return.\n\n`config` and `hb` are the two that have no static equivalent on 3.0.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reference",
+                "games",
+                "teams",
+                "standings",
+                "spirit",
+                "players",
+                "playerevents",
+                "statistics",
+                "config",
+                "hb"
+              ]
+            },
+            "example": "reference"
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "Entity key. Required for `standings` and `playerevents`, optional for `games`, `teams` and `statistics`, ignored by the rest.\n\nAccepts the literal `active` for `games` and `top` for `statistics`. **Validated against the configured event** - an id belonging to a different event returns `400`, not data.\n",
+            "schema": {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "examples": {
+              "poolId": {
+                "value": 1000
+              },
+              "activeGames": {
+                "value": "active"
+              },
+              "topStats": {
+                "value": "top"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The requested payload. `Content-Type` is `application/json; charset=UTF-8` - note the charset suffix, which 1.9 did not send, so exact content-type matches need updating.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "One of the payload schemas, selected by `entity`. Each is identical to the correspondingly named static file's body.",
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReferenceResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GamesResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ActiveGamesResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GameDetailResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TeamsResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TeamDetailResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StandingsResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SpiritResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PlayersResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PlayerEventsResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StatisticsResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TopStatisticsResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ConfigResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Heartbeat"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request - an unknown or non-string `entity`, a missing `id` where one is required, or an `id` that belongs to a different event.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The configured event is not publicly available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request bypassed this front controller - for example by calling `live/api.php` directly. The body is empty.\n"
+          },
+          "503": {
+            "description": "Maintenance mode is active. **The body is an HTML splash page, not JSON**, so do not parse it. Treat it as \"retry later\" and back off.\n",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -471,6 +647,16 @@
           "type": "integer"
         },
         "example": 18
+      },
+      "PlayerId": {
+        "name": "playerId",
+        "in": "path",
+        "required": true,
+        "description": "`player_id` from the players endpoint, or from any roster or statistics row.",
+        "schema": {
+          "type": "integer"
+        },
+        "example": 2216
       },
       "SeriesId": {
         "name": "seriesId",
@@ -600,7 +786,7 @@
       "HeartbeatConfig": {
         "type": "object",
         "title": "HeartbeatConfig",
-        "description": "Deployment configuration, listed below in wire order. All 32 keys were present on every 1.9.x deployment checked. Keys not listed here are still accepted rather than rejected, in case a later release adds one.\n\nThree things to watch:\n- Booleans here are real JSON booleans, not the `0` / `1` integers used everywhere else in this API.\n- Some numeric settings are sent as strings (`\"120\"`, `\"1\"`).\n- `TOURNAMENT_INFO_URL` may be `null`, unlike most of this API where an unset field is simply absent.\n\nThree further keys exist in the deployment's own configuration but are stripped before this block is written: `LIVE_ALLOWED_ENTITIES`, `BEACH_ULTIMATE_SHOWCASE_AFTER_TOURNAMENT` and `IS_DEV`.\n",
+        "description": "Deployment configuration. The 3.0 deployment checked sends 34 keys. Keys not listed here are still accepted rather than rejected, in case a later release adds one.\n\nSeven keys are new since 1.9 and five have gone: `SOCIAL_SHARE_LOGO_PATH`, `FAVICON_PATH`, `TEAM_PHOTOS_ENABLED`, `MAINTENANCE_PAGE_PATH` and `CACHE_MINUTES_MODULATOR` are not sent on 3.0. Note that maintenance mode still exists - it moved to `season.maintenance_mode` and now answers API calls with HTTP 503.\n\nThree things to watch:\n- Booleans here are real JSON booleans, not the `0` / `1` integers used everywhere else in this API.\n- Some numeric settings are sent as strings (`\"120\"`, `\"1\"`).\n- `TOURNAMENT_INFO_URL` may be `null`, unlike most of this API where an unset field is simply absent.\n\nThree further keys exist in the deployment's own configuration but are stripped before this block is written: `LIVE_ALLOWED_ENTITIES`, `BEACH_ULTIMATE_SHOWCASE_AFTER_TOURNAMENT` and `IS_DEV`.\n",
         "required": [
           "LIVE_SEASON_ID",
           "STATIC_CACHE_BASE_URL"
@@ -646,19 +832,6 @@
           "HOME_LOGO_PATH": {
             "type": "string",
             "description": "Tournament logo. Either root-relative or an absolute URL.",
-            "examples": [
-              "/live/conf/logos/wmucc-2026.png"
-            ]
-          },
-          "SOCIAL_SHARE_LOGO_PATH": {
-            "type": "string",
-            "description": "Image used for link previews.",
-            "examples": [
-              "/live/conf/logos/wmucc-2026.png"
-            ]
-          },
-          "FAVICON_PATH": {
-            "type": "string",
             "examples": [
               "/live/conf/logos/wmucc-2026.png"
             ]
@@ -719,10 +892,6 @@
             "type": "boolean",
             "description": "When false, spirit comments are blanked to `null` in every response that would carry them."
           },
-          "TEAM_PHOTOS_ENABLED": {
-            "type": "boolean",
-            "description": "When false, every `photos` array in the API is empty."
-          },
           "SHOW_TOP_STATS": {
             "type": "boolean",
             "description": "Whether the event-wide records endpoint is published."
@@ -777,10 +946,6 @@
               "/?view=live/vote"
             ]
           },
-          "MAINTENANCE_PAGE_PATH": {
-            "type": "string",
-            "description": "When non-empty, the front end shows a maintenance page instead of results."
-          },
           "DEFAULT_TO_LIVE": {
             "type": "boolean"
           },
@@ -801,20 +966,75 @@
               "120"
             ]
           },
-          "CACHE_MINUTES_MODULATOR": {
+          "LIVE_SERIES_ABBREVIATIONS": {
+            "description": "Short labels for divisions, keyed by series id. Serialises as `[]` rather than `{}` when unset, so check the type before indexing. New in 3.0.",
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "maxItems": 0,
+                "items": true
+              }
+            ],
+            "examples": [
+              []
+            ]
+          },
+          "THEME_STYLE": {
+            "type": "string",
+            "description": "Named visual theme for the front end. New in 3.0.",
+            "examples": [
+              "pro"
+            ]
+          },
+          "DATE_DISPLAY": {
+            "type": "string",
+            "description": "How dates are rendered in the front end. New in 3.0.",
+            "examples": [
+              "full"
+            ]
+          },
+          "DEFAULT_LANDING_PATH": {
+            "type": "string",
+            "description": "Route the front end opens on. New in 3.0.",
+            "examples": [
+              "/teams/final-placements"
+            ]
+          },
+          "ENABLE_CACHE_WARMER": {
+            "type": "boolean",
+            "description": "Whether the deployment pre-builds cached payloads in the background. New in 3.0."
+          },
+          "CACHE_WARM_TICK_SECONDS": {
             "type": [
               "string",
               "integer"
             ],
-            "description": "Multiplier applied to every server-side cache lifetime quoted in this document.",
+            "description": "Interval between cache-warmer batches. New in 3.0.",
             "examples": [
-              "1"
+              "5"
+            ]
+          },
+          "CACHE_WARM_BATCH_SIZE": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "How many payloads the cache warmer rebuilds per tick. New in 3.0.",
+            "examples": [
+              "4"
             ]
           },
           "UO_URL_PREFIX": {
             "type": "string",
-            "description": "Path prefix of the UltiOrganizer install this Live! instance sits in.",
+            "description": "Path prefix of the UltiOrganizer install this Live! instance sits in, and the base the routed endpoint hangs off.\n",
             "examples": [
+              "/wucc-2026/",
               "/"
             ]
           },
@@ -858,6 +1078,7 @@
           "teams",
           "countries",
           "reservations",
+          "pool_placements",
           "meta"
         ],
         "properties": {
@@ -896,6 +1117,13 @@
             "description": "Playing fields, grouped by day.",
             "items": {
               "$ref": "#/components/schemas/Reservation"
+            }
+          },
+          "pool_placements": {
+            "type": "array",
+            "description": "**New in 3.0.** Every team's resolved position in every pool it belongs to, one row per team-and-pool pair, computed by UltiOrganizer's own standings logic.\n\nThis is the structured standings data the 1.9 line never published - there, the only ranking available was inside the standings endpoint's rendered HTML. Join it to `pools` and `teams` by id.\n",
+            "items": {
+              "$ref": "#/components/schemas/PoolPlacement"
             }
           },
           "meta": {
@@ -1098,10 +1326,21 @@
           },
           "spiritmode": {
             "type": "integer",
-            "description": "Which spirit scoring scheme is in use. An id, not a count.",
+            "description": "Which spirit scoring scheme is in use. An id, not a count. It selects the category set published in `spiritCategories`.",
             "examples": [
               1003
             ]
+          },
+          "spiritCategories": {
+            "type": "array",
+            "description": "**New in 3.0, and the key to reading every spirit field in this API.** UltiOrganizer 4 defines spirit categories per scoring mode, so a season can use more or fewer than the five that 1.9 hard-coded. This list says which categories the event actually uses, in order, and what each one means.\n\nEvery `catN` field elsewhere in this document - on the spirit board, on a team's given and received rows, and in a game's spirit breakdown - corresponds to an entry here by its `key`. Build your columns from this list rather than assuming `cat1` to `cat5`.\n",
+            "items": {
+              "$ref": "#/components/schemas/SpiritCategory"
+            }
+          },
+          "require_accreditation": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the event requires player accreditation. Not present on the 1.9 line."
           }
         }
       },
@@ -1237,6 +1476,10 @@
           },
           "continuingpool": {
             "$ref": "#/components/schemas/IntBool"
+          },
+          "isfollower": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether this pool follows on from another. Appears here on 3.0; the 1.9 line carried the equivalent only on the standings endpoint's pool object, as `follower`."
           }
         }
       },
@@ -1279,9 +1522,9 @@
           },
           "country": {
             "type": "integer",
-            "description": "Joins to `countries[].country_id`.",
+            "description": "Always an **integer** on 3.0, and always resolvable in `countries`. Where the team has no country of its own, UltiOrganizer 4 inherits one from the team's club; where neither exists the synthetic id `-1` is used, so this is never null.\n",
             "examples": [
-              1011
+              1065
             ]
           },
           "rank": {
@@ -1331,7 +1574,7 @@
       "Country": {
         "type": "object",
         "title": "Country",
-        "description": "A country referenced by at least one team. Not a full country list, only those entered.",
+        "description": "A country referenced by at least one team. Not a full country list, only those entered.\n\nOn 3.0 this list is **guaranteed to contain a row for every `teams[].country` value**, so the join never dangles. That includes countries inherited from a team's club and the synthetic \"Unknown\" entry described below.\n",
         "required": [
           "country_id",
           "name",
@@ -1341,9 +1584,10 @@
         "properties": {
           "country_id": {
             "type": "integer",
-            "description": "From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.",
+            "description": "An **integer** on 3.0; the 1.9 line sent this as a numeric string in some responses. From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.\n\nThe one exception is `-1`, a synthetic id for teams with no country of their own and none inheritable from a club. Its row is `{ \"country_id\": -1, \"name\": \"Unknown\", \"abbreviation\": \"UNK\", \"flagfile\": null }`.\n",
             "examples": [
-              1011
+              1011,
+              -1
             ]
           },
           "name": {
@@ -1360,8 +1604,11 @@
             ]
           },
           "flagfile": {
-            "type": "string",
-            "description": "Filename only. Prefix with `config.FLAG_FILES_BASE_URL` to build the URL.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Filename only. Prefix with `config.FLAG_FILES_BASE_URL` to build the URL. `null` on the synthetic `-1` row, which has no flag.",
             "examples": [
               "Australia.png"
             ]
@@ -1766,24 +2013,31 @@
           },
           "spiritstats": {
             "type": "object",
-            "description": "How many games contributed to the spirit figures. Can be lower than `stats.games` when an opponent has not submitted.",
+            "description": "How many games contributed to the spirit figures. **Reduced to this single field in 3.0** - every other field the 1.9 helpers included is gone, and the per-category detail moved to `spiritgiven` and `spiritreceived`.\n\nLower than `stats.games` whenever an opponent has not submitted or a game is not cleared for display.\n",
+            "required": [
+              "games"
+            ],
             "properties": {
               "games": {
                 "type": "integer",
                 "examples": [
-                  13
+                  10
                 ]
               }
             }
           },
           "spirittotal": {
             "type": "object",
-            "description": "Total spirit points received across the event.",
+            "description": "Total spirit points received across the event. **Reduced to this single field in 3.0.**",
+            "required": [
+              "total"
+            ],
             "properties": {
               "total": {
-                "type": "integer",
+                "type": "number",
+                "description": "Sent as a number rather than an integer on 3.0, since weighted categories can produce a fractional total.",
                 "examples": [
-                  138
+                  99
                 ]
               }
             }
@@ -1982,64 +2236,62 @@
       "TeamSpiritGame": {
         "type": "object",
         "title": "TeamSpiritGame",
-        "description": "One game's spirit score, in the five WFDF Spirit of the Game categories. Each is scored 0-4 and `total` is their sum, so 20 is the maximum and 2 per category is the \"good\" baseline rather than a poor score.\n\nWhether this is a score given or received depends on which array it came from, not on its fields.\n",
+        "description": "One game's spirit score. **Reshaped in 3.0**: it gained `time`, `spiritmode`, `is_complete` and `is_visible`, and the fixed `cat1`-`cat5` became a variable `catN` set driven by `season.spiritCategories`.\n\nRows appear only for games where **both** teams have submitted and the game is cleared for publication, so these arrays can be shorter than the team's games played. `is_complete` and `is_visible` tell you which condition each row satisfied.\n\nWhether this is a score given or received depends on which array it came from, not on its fields.\n",
         "required": [
           "game_id",
-          "cat1",
-          "cat2",
-          "cat3",
-          "cat4",
-          "cat5",
           "total"
         ],
+        "unevaluatedProperties": false,
+        "patternProperties": {
+          "^cat[0-9]+$": {
+            "type": "integer",
+            "description": "One category's score for this game, keyed by the category's `key` in `season.spiritCategories`. Its permitted range comes from that entry's `min` and `max` - conventionally 0 to 4, but the season defines it.\n\n`0` is a real submitted score on 3.0, not a stand-in for \"not submitted\".\n",
+            "examples": [
+              2
+            ]
+          }
+        },
         "properties": {
           "game_id": {
             "type": "integer",
             "description": "Joins to the games endpoints.",
             "examples": [
-              23
-            ]
-          },
-          "cat1": {
-            "type": "integer",
-            "description": "Rules knowledge and use.",
-            "examples": [
-              2
-            ]
-          },
-          "cat2": {
-            "type": "integer",
-            "description": "Fouls and body contact.",
-            "examples": [
-              2
-            ]
-          },
-          "cat3": {
-            "type": "integer",
-            "description": "Fair-mindedness.",
-            "examples": [
-              2
-            ]
-          },
-          "cat4": {
-            "type": "integer",
-            "description": "Positive attitude and self-control.",
-            "examples": [
-              3
-            ]
-          },
-          "cat5": {
-            "type": "integer",
-            "description": "Communication.",
-            "examples": [
-              2
+              1083
             ]
           },
           "total": {
             "type": "integer",
-            "description": "Sum of the five categories, out of 20.",
+            "description": "Sum of the categories present. With five 0-4 categories that is out of 20, but the maximum follows `season.spiritCategories`.",
             "examples": [
-              11
+              12
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "The game's start time, tournament-local. New in 3.0.",
+            "examples": [
+              "2026-08-15 17:00:00"
+            ]
+          },
+          "spiritmode": {
+            "type": "integer",
+            "description": "Scoring scheme this score was recorded under, matching `season.spiritmode`. New in 3.0.",
+            "examples": [
+              1003
+            ]
+          },
+          "givento": {
+            "type": "string",
+            "description": "Names the **opponent**, in both arrays. Direction comes from which array the row is in, never from this field.",
+            "examples": [
+              "Meclao"
+            ]
+          },
+          "givenby": {
+            "type": "string",
+            "description": "Also names the **opponent**, and holds the same value as `givento`. Neither field tells you the direction.",
+            "examples": [
+              "Meclao"
             ]
           },
           "comments": {
@@ -2047,41 +2299,143 @@
               "string",
               "null"
             ],
-            "description": "Free text from the scoring team. Forced to `null` for every record unless the event enables spirit comments, so a null here does not mean none was written."
-          },
-          "givento": {
-            "type": "string",
-            "description": "Always present in `spiritgiven`, and names the **opponent**. Where it also appears in `spiritreceived` it repeats the same opponent name.",
-            "examples": [
-              "Lebanon"
-            ]
-          },
-          "givenby": {
-            "type": "string",
-            "description": "Always present in `spiritreceived`, and names the **opponent**. Where it also appears in `spiritgiven` it repeats the same opponent name.",
-            "examples": [
-              "Lebanon"
-            ]
-          },
-          "time": {
-            "type": "string",
-            "description": "When the score was submitted, tournament-local. Sent by some deployments only.",
-            "examples": [
-              "2025-11-18 12:50:00"
-            ]
-          },
-          "spiritmode": {
-            "type": "integer",
-            "description": "Scoring scheme id, matching `season.spiritmode`. Sent by some deployments only.",
-            "examples": [
-              1003
-            ]
+            "description": "Free text from the scoring team. `null` unless the season enables spirit comments **and** the game is cleared for publication."
           },
           "is_complete": {
-            "$ref": "#/components/schemas/IntBool"
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether both teams' submissions are in."
           },
           "is_visible": {
-            "$ref": "#/components/schemas/IntBool"
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the game is cleared for public display."
+          }
+        }
+      },
+      "SpiritCategory": {
+        "type": "object",
+        "title": "SpiritCategory",
+        "description": "One spirit category the event scores on. The entries of `season.spiritCategories`, in display order.",
+        "required": [
+          "category_id",
+          "key",
+          "index",
+          "min",
+          "max",
+          "factor",
+          "label"
+        ],
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "The category's own id, from UltiOrganizer's spirit-mode definition.",
+            "examples": [
+              1009
+            ]
+          },
+          "key": {
+            "type": "string",
+            "description": "The property name this category appears under in every spirit object - `cat1`, `cat2` and so on. This is the field to key off.",
+            "pattern": "^cat[0-9]+$",
+            "examples": [
+              "cat1"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "Position in the category list, counting from 1. Matches the digits in `key`.",
+            "examples": [
+              1
+            ]
+          },
+          "group": {
+            "type": "integer",
+            "description": "Grouping id, for scoring schemes that split categories into sections.",
+            "examples": [
+              1
+            ]
+          },
+          "min": {
+            "type": "integer",
+            "description": "Lowest score this category accepts.",
+            "examples": [
+              0
+            ]
+          },
+          "max": {
+            "type": "integer",
+            "description": "Highest score this category accepts. Conventionally 4, but set per mode.",
+            "examples": [
+              4
+            ]
+          },
+          "factor": {
+            "type": "number",
+            "description": "Weighting applied when the category contributes to a total.",
+            "examples": [
+              1
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-readable name, in the event's language.",
+            "examples": [
+              "Rules Knowledge and Use",
+              "Fouls and Body Contact"
+            ]
+          }
+        }
+      },
+      "PoolPlacement": {
+        "type": "object",
+        "title": "PoolPlacement",
+        "description": "One team's resolved position in one pool. New in 3.0.",
+        "required": [
+          "pool_id",
+          "team_id",
+          "placement"
+        ],
+        "properties": {
+          "pool_id": {
+            "type": "integer",
+            "description": "Joins to `pools[].pool_id`.",
+            "examples": [
+              1016
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Joins to `teams[].team_id`.",
+            "examples": [
+              1131
+            ]
+          },
+          "placement": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Position within the pool, counting from 1. `null` while the pool has no resolved rank for that team, which is the normal state before enough games are played.",
+            "examples": [
+              1
+            ]
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "title": "Error",
+        "description": "Every error body from the routed endpoint. The static files have no error contract - they simply 404 from the web server.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable reason. Not a stable code, so match on the status rather than this string.",
+            "examples": [
+              "Event is not available for external access.",
+              "Team not found"
+            ]
           }
         }
       },
@@ -2172,7 +2526,7 @@
           },
           "status": {
             "type": "string",
-            "description": "Derived rather than stored: `ongoing` when the game is flagged live, `completed` when either score is above zero, and `scheduled` otherwise. A genuine 0-0 that has finished therefore reports as `scheduled`.\n",
+            "description": "Derived, and **its meaning changed in 3.0**. A game is `completed` once it has started and is no longer ongoing, from UltiOrganizer 4's `hasstarted` flag - so 0-0 results and forfeits are `completed` here, where on 1.9 they stayed `scheduled` for ever. `ongoing` still means in progress, `scheduled` means not yet started.\n\nBecause team spirit and win averages are computed over completed games, the same underlying data can yield different averages on 3.0 than on 1.9.\n",
             "enum": [
               "scheduled",
               "ongoing",
@@ -2239,13 +2593,6 @@
               1140
             ]
           },
-          "visitorsotg": {
-            "type": "integer",
-            "description": "Spirit points the away team received for this game, out of 20. Its home counterpart is stripped from this endpoint, so use the team-detail or spirit endpoints for a matched pair.\n",
-            "examples": [
-              12
-            ]
-          },
           "islive": {
             "$ref": "#/components/schemas/IntBool",
             "description": "Whether a video stream is or was available. Not the same as `status: ongoing`."
@@ -2304,23 +2651,48 @@
               "5B"
             ]
           },
-          "ssdata": {
+          "pools": {
             "type": "string",
-            "description": "Streaming metadata, as a **JSON document encoded inside a string** - parse it a second time to read it. Observed keys are `is_streamed`, `event_name`, `venue`, `delay`, `scoreboard`, `game_duration_scoreboard`, `game_duration_scheduling` and `labels`.\n\nNot a Live! field. It comes from an extra `uo_game` column present on some UltiOrganizer installs, so it appears on the shared `ultimatefederation.eu` deployments and on neither WFDF-hosted one. Do not treat it as guaranteed by this release.\n",
+            "description": "Every pool this game belongs to, as a **string** - it is exempt from numeric coercion, so a single pool arrives as `\"1016\"` rather than `1016`. Multiple ids are comma-separated, de-duplicated and sorted.\n\nUltiOrganizer 4 associates games with pools through a join table, so a crossover can belong to several. `pool` above is the owning one.\n",
             "examples": [
-              "{\"is_streamed\":true,\"event_name\":\"FRA (WMN) - HUN (WMN)\",\"venue\":32,\"delay\":60}"
+              "1016"
             ]
           },
           "hasstarted": {
             "type": "integer",
-            "description": "Whether the game has started, as recorded by the install rather than derived by Live!. **Not a `0`/`1` flag** - the only value observed is `2`, on games that had finished, so the value space is not established. Prefer `status`.\n\nAnother install-specific `uo_game` column, seen on one deployment only. Falsy values are stripped, so `0` never appears.\n",
+            "description": "UltiOrganizer 4's started flag, and what `status` is derived from on 3.0. **Not a `0`/`1` boolean** - the only value observed on played games is `2`, so the value space is not established. Prefer `status`. Falsy values are stripped, so `0` never appears.\n",
             "examples": [
               2
             ]
           },
           "show_spirit": {
             "$ref": "#/components/schemas/IntBool",
-            "description": "Whether spirit scores are shown for this game. Install-specific `uo_game` column, seen on one deployment only, and only ever as `1` because `0` is stripped.\n"
+            "description": "Whether spirit scores for this game are cleared for display. The scores themselves are not published in this list on 3.0."
+          },
+          "forfeit": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the game was forfeited. New in 3.0, and worth checking before reading the score: a forfeit reports `completed` with a 0-0 scoreline, which on 1.9 would have stayed `scheduled` for ever.\n"
+          },
+          "home_scheduling_frompool": {
+            "type": "integer",
+            "description": "The pool the home placeholder draws from, for a fixture whose teams are not yet known. New in 3.0.",
+            "examples": [
+              1039
+            ]
+          },
+          "visitor_scheduling_frompool": {
+            "type": "integer",
+            "description": "The pool the away placeholder draws from. New in 3.0.",
+            "examples": [
+              1039
+            ]
+          },
+          "ssdata": {
+            "type": "string",
+            "description": "Streaming metadata, as a **JSON document encoded inside a string** - parse it a second time to read it. Observed keys are `is_streamed`, `event_name`, `venue`, `delay`, `scoreboard`, `game_duration_scoreboard`, `game_duration_scheduling` and `labels`.\n\nNot a Live! field. It comes from an extra `uo_game` column present on some UltiOrganizer installs rather than from this release, and was not sent by the 3.0 deployment sampled. Treat it as optional and install-dependent.\n",
+            "examples": [
+              "{\"is_streamed\":true,\"event_name\":\"FRA (WMN) - HUN (WMN)\",\"venue\":32,\"delay\":60}"
+            ]
           }
         }
       },
@@ -2598,7 +2970,7 @@
           },
           "status": {
             "type": "string",
-            "description": "Derived the same way as on the games list, and the field to read. Exists here but not in `game_info`.",
+            "description": "Derived the same way as on the games list - `completed` once started and no longer ongoing, so 0-0 games and forfeits count. Exists here but not in `game_info`.",
             "enum": [
               "scheduled",
               "ongoing",
@@ -2617,8 +2989,9 @@
           },
           "pool": {
             "type": "integer",
+            "description": "The owning pool. A game can belong to several on 3.0; see `pools` on the games list.",
             "examples": [
-              7
+              1016
             ]
           },
           "reservation": {
@@ -2655,9 +3028,9 @@
               "integer",
               "null"
             ],
-            "description": "Spirit points the home team received for this game, out of 20. Removed from the games list but published here, giving a matched pair with `visitorsotg`.\n",
+            "description": "Spirit points the home team received for this game. **Null unless both teams have submitted and the game is cleared for publication** - 3.0 applies UltiOrganizer 4's visibility rules here, where 1.9 published whatever was stored.\n\nThis is the only endpoint that publishes either team's total on 3.0; the games list sends neither.\n",
             "examples": [
-              11
+              10
             ]
           },
           "visitorsotg": {
@@ -2665,9 +3038,31 @@
               "integer",
               "null"
             ],
-            "description": "Spirit points the away team received for this game, out of 20.",
+            "description": "Spirit points the away team received, under the same visibility rules as `homesotg`.",
             "examples": [
-              12
+              11
+            ]
+          },
+          "hasstarted": {
+            "type": "integer",
+            "description": "UltiOrganizer 4's started flag, and what `status` derives from. Not a `0`/`1` boolean; `2` is the value seen on played games.",
+            "examples": [
+              2
+            ]
+          },
+          "show_spirit": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether this game's spirit scores are cleared for display. When `0`, the `sotg` fields and `spiritstats` are null."
+          },
+          "forfeit": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the game was forfeited. A forfeit reports `completed` with a 0-0 scoreline on 3.0."
+          },
+          "spiritmode": {
+            "type": "integer",
+            "description": "Scoring scheme in force for this game, matching `season.spiritmode`. New in 3.0.",
+            "examples": [
+              1003
             ]
           },
           "official": {
@@ -2969,6 +3364,31 @@
               "string",
               "null"
             ]
+          },
+          "hometeamshortname": {
+            "type": "string",
+            "description": "The home team's short display name, which falls back to the full name when no abbreviation is set. New in 3.0.",
+            "examples": [
+              "Hybrid"
+            ]
+          },
+          "visitorteamshortname": {
+            "type": "string",
+            "description": "The away team's short display name. New in 3.0.",
+            "examples": [
+              "AEW"
+            ]
+          },
+          "hasstarted": {
+            "type": "integer",
+            "description": "UltiOrganizer 4's started flag, repeated from `game_result`. Not a `0`/`1` boolean. New in 3.0.",
+            "examples": [
+              2
+            ]
+          },
+          "drawsallowed": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the pool's rules permit a drawn game. New in 3.0."
           }
         }
       },
@@ -3148,10 +3568,26 @@
             ]
           },
           "follower": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Sent as `null` rather than `0` on 3.0 where the pool follows nothing.",
             "examples": [
               0
             ]
+          },
+          "drawsallowed": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether drawn games are permitted in this pool. New in 3.0."
+          },
+          "playoff_template": {
+            "type": [
+              "string",
+              "integer",
+              "null"
+            ],
+            "description": "Bracket template the pool was generated from, `null` when it was not generated from one. New in 3.0."
           },
           "visible": {
             "$ref": "#/components/schemas/IntBool"
@@ -3398,6 +3834,13 @@
               2
             ]
           },
+          "callahan": {
+            "type": "integer",
+            "description": "Callahans in this game. Present on 3.0; the 1.9 line carried this only on the event-total player shapes.",
+            "examples": [
+              0
+            ]
+          },
           "total": {
             "type": "integer",
             "description": "`done` plus `fedin`.",
@@ -3410,7 +3853,7 @@
       "GameSpiritStats": {
         "type": "object",
         "title": "GameSpiritStats",
-        "description": "Both teams' spirit scores for this game. **These are the scores awarded to the named team by its opponent**, which is the opposite of what the key names suggest - the response says so itself in `note`.\n\nAbsent when the event does not publish spirit points, and `comments` is dropped entirely rather than nulled when spirit comments are disabled.\n",
+        "description": "Both teams' spirit scores for this game. **These are the scores awarded to the named team by its opponent**, which is the opposite of what the key names suggest - the response says so itself in `note`.\n\nOn 3.0 the scores follow UltiOrganizer 4's visibility rules: they are populated only when both teams' submissions are complete **and** the game is cleared for publication, and are null otherwise.\n",
         "properties": {
           "note": {
             "type": "string",
@@ -3430,71 +3873,27 @@
       "GameSpiritScore": {
         "type": "object",
         "title": "GameSpiritScore",
-        "description": "One team's spirit score for one game, awarded by its opponent. Each category is 0-4; unlike `TeamSpiritGame` there is no `total`, so sum the five yourself.",
-        "required": [
-          "game_id",
-          "team_id",
-          "cat1",
-          "cat2",
-          "cat3",
-          "cat4",
-          "cat5"
-        ],
+        "description": "One team's spirit score for one game, awarded by its opponent.\n\n**Reduced in 3.0**: the `game_id` and `team_id` that 1.9 sent are gone - the keys of the parent object tell you which team each belongs to - and the fixed five categories became the variable `catN` set driven by `season.spiritCategories`. There is no `total`, so sum the categories yourself.\n\nPopulated only when both teams have submitted **and** the game is cleared for publication; otherwise the scores are null.\n",
+        "unevaluatedProperties": false,
+        "patternProperties": {
+          "^cat[0-9]+$": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "One category's score, keyed by its `key` in `season.spiritCategories`, and bounded by that entry's `min` and `max`. `0` is a real submitted score on 3.0.\n",
+            "examples": [
+              2
+            ]
+          }
+        },
         "properties": {
-          "game_id": {
-            "type": "integer",
-            "examples": [
-              2
-            ]
-          },
-          "team_id": {
-            "type": "integer",
-            "description": "The team the score is **for**, not the team that gave it.",
-            "examples": [
-              75
-            ]
-          },
-          "cat1": {
-            "type": "integer",
-            "description": "Rules knowledge and use.",
-            "examples": [
-              2
-            ]
-          },
-          "cat2": {
-            "type": "integer",
-            "description": "Fouls and body contact.",
-            "examples": [
-              2
-            ]
-          },
-          "cat3": {
-            "type": "integer",
-            "description": "Fair-mindedness.",
-            "examples": [
-              2
-            ]
-          },
-          "cat4": {
-            "type": "integer",
-            "description": "Positive attitude and self-control.",
-            "examples": [
-              2
-            ]
-          },
-          "cat5": {
-            "type": "integer",
-            "description": "Communication.",
-            "examples": [
-              3
-            ]
-          },
           "comments": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Free text from the opponent. Removed entirely when the event disables spirit comments."
+            "description": "Free text from the opponent. The key is present **only** when spirit comments are enabled for the season and the game is visible - unlike 1.9, where it was sent as `null` instead."
           }
         }
       },
@@ -3620,6 +4019,17 @@
             ],
             "description": "Short bracket code, when the fixture has one."
           },
+          "forfeit": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the game was forfeited. New in 3.0."
+          },
+          "original_pool": {
+            "type": "integer",
+            "description": "The pool the fixture was originally scheduled in, which can differ from the pool being listed when a game is shared across pools. New in 3.0.",
+            "examples": [
+              1000
+            ]
+          },
           "phometeamname": {
             "type": [
               "string",
@@ -3655,81 +4065,259 @@
       "SpiritBoardEntry": {
         "type": "object",
         "title": "SpiritBoardEntry",
-        "description": "One team's **mean** spirit score across its games, in the five WFDF Spirit of the Game categories.\n\nEvery figure here is an average per game, not a sum, which is what makes teams with different numbers of games comparable. Means are rounded to two decimal places. Category means are fractional and run 0-4; `total` is the mean per-game total, out of 20. To get sums instead, use `spirit` and `spiritavg` on the teams endpoint, or `spiritreceived` on team detail for the per-game breakdown.\n\nOnly games where **both** teams have submitted a score are counted, and a score of zero across all five categories is excluded, so this leaderboard can lag behind the results for a round or two.\n\nRows are grouped by team name rather than by id, so two teams sharing a name within one division would be merged into a single row.\n",
+        "description": "One team's **mean** spirit score across its games, in whichever categories the event uses.\n\nEvery figure is an average per game, not a sum, rounded to two decimals, which is what makes teams with different numbers of games comparable. Only games where both teams have submitted and the game is publicly visible are counted.\n\nTwo changes from 1.9: the `teamvalid` field is **gone**, and teams whose submissions average to zero are now included rather than filtered out. Ordering is by `total` descending, ties broken alphabetically by team name.\n",
         "required": [
           "team_id",
           "teamname",
-          "cat1",
-          "cat2",
-          "cat3",
-          "cat4",
-          "cat5",
           "games",
           "total"
         ],
+        "unevaluatedProperties": false,
+        "patternProperties": {
+          "^cat[0-9]+$": {
+            "type": "number",
+            "description": "Mean score in that category, keyed by its `key` in `season.spiritCategories`. Fractional, and bounded by that entry's `min` and `max`.",
+            "examples": [
+              2.33
+            ]
+          }
+        },
         "properties": {
           "team_id": {
             "type": "integer",
             "examples": [
-              95
+              1007
             ]
           },
           "teamname": {
             "type": "string",
             "examples": [
-              "Australia"
-            ]
-          },
-          "teamvalid": {
-            "$ref": "#/components/schemas/IntBool"
-          },
-          "cat1": {
-            "type": "number",
-            "description": "Mean rules knowledge and use.",
-            "examples": [
-              2
-            ]
-          },
-          "cat2": {
-            "type": "number",
-            "description": "Mean fouls and body contact.",
-            "examples": [
-              2.08
-            ]
-          },
-          "cat3": {
-            "type": "number",
-            "description": "Mean fair-mindedness.",
-            "examples": [
-              2.33
-            ]
-          },
-          "cat4": {
-            "type": "number",
-            "description": "Mean positive attitude and self-control.",
-            "examples": [
-              2.67
-            ]
-          },
-          "cat5": {
-            "type": "number",
-            "description": "Mean communication.",
-            "examples": [
-              2.42
+              "Brisbanites"
             ]
           },
           "games": {
             "type": "integer",
-            "description": "Games the mean is taken over. Lower than the team's games played whenever an opponent has not submitted, since a game only counts once both scores are in.",
+            "description": "Games the mean is taken over. Lower than the team's games played whenever an opponent has not submitted, or a game is not yet cleared for display.",
             "examples": [
-              12
+              9
             ]
           },
           "total": {
             "type": "number",
-            "description": "Mean total per game, out of 20. The column the list is sorted by.",
+            "description": "Mean total per game. The column the list is sorted by.",
             "examples": [
-              11.5
+              11.44
+            ]
+          }
+        }
+      },
+      "PlayerEventsResponse": {
+        "type": "object",
+        "title": "PlayerEventsResponse",
+        "description": "Response body of the player-events endpoint. New in 3.0.",
+        "required": [
+          "playerevents",
+          "meta"
+        ],
+        "properties": {
+          "playerevents": {
+            "$ref": "#/components/schemas/PlayerEvents"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "PlayerEvents": {
+        "type": "object",
+        "title": "PlayerEvents",
+        "description": "One player's identity and every goal they scored or assisted, grouped by game.\n\nOnly games in which they recorded something appear, so `games` is not an appearance count - use `games` on the statistics or team-detail endpoints for that.\n",
+        "required": [
+          "player_id",
+          "firstname",
+          "lastname",
+          "games"
+        ],
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "examples": [
+              2216
+            ]
+          },
+          "firstname": {
+            "type": "string",
+            "examples": [
+              "Soline"
+            ]
+          },
+          "lastname": {
+            "type": "string",
+            "examples": [
+              "Baron"
+            ]
+          },
+          "num": {
+            "type": "integer",
+            "description": "Jersey number.",
+            "examples": [
+              84
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "The player's team. Named `team_id` here, unlike `PlayerStats` which calls it `team`.",
+            "examples": [
+              1050
+            ]
+          },
+          "games": {
+            "type": "array",
+            "description": "One entry per game in which the player scored or assisted, in date order.",
+            "items": {
+              "$ref": "#/components/schemas/PlayerEventsGame"
+            }
+          }
+        }
+      },
+      "PlayerEventsGame": {
+        "type": "object",
+        "title": "PlayerEventsGame",
+        "description": "One game the player contributed to, with the fixture's own details repeated so the row stands alone.",
+        "required": [
+          "game_id",
+          "events"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "examples": [
+              1084
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "Scheduled start, tournament-local.",
+            "examples": [
+              "2026-08-16 17:00:00"
+            ]
+          },
+          "hometeam": {
+            "type": "integer",
+            "examples": [
+              1050
+            ]
+          },
+          "visitorteam": {
+            "type": "integer",
+            "examples": [
+              1115
+            ]
+          },
+          "hometeamname": {
+            "type": "string",
+            "examples": [
+              "33 Tours"
+            ]
+          },
+          "visitorteamname": {
+            "type": "string",
+            "examples": [
+              "Guayota"
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "description": "Final home score of the game, not the score at the player's goal.",
+            "examples": [
+              15
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              14
+            ]
+          },
+          "events": {
+            "type": "array",
+            "description": "Every goal in this game that the player scored or assisted.",
+            "items": {
+              "$ref": "#/components/schemas/PlayerEvent"
+            }
+          }
+        }
+      },
+      "PlayerEvent": {
+        "type": "object",
+        "title": "PlayerEvent",
+        "description": "One goal the player was involved in, either as scorer or as assist. Both sides are named, so a row where `assist_id` is the player is an assist and one where `scorer_id` is the player is a goal - check which rather than assuming.\n",
+        "required": [
+          "time",
+          "scorer_id"
+        ],
+        "properties": {
+          "time": {
+            "type": "integer",
+            "description": "Seconds from the start of the game.",
+            "examples": [
+              4755
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "description": "Running home score **after** this goal.",
+            "examples": [
+              12
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "description": "Running away score after this goal.",
+            "examples": [
+              12
+            ]
+          },
+          "iscallahan": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "scorer_id": {
+            "type": "integer",
+            "examples": [
+              2216
+            ]
+          },
+          "scorer_name": {
+            "type": "string",
+            "description": "Full name, already joined - unlike the game-detail `goals[]` rows, which split first and last name.",
+            "examples": [
+              "Soline Baron"
+            ]
+          },
+          "scorer_num": {
+            "type": "integer",
+            "description": "Scorer's jersey number.",
+            "examples": [
+              84
+            ]
+          },
+          "assist_id": {
+            "type": "integer",
+            "description": "Player id of the assist. Absent or `0` when the goal was unassisted.",
+            "examples": [
+              2234
+            ]
+          },
+          "assist_name": {
+            "type": "string",
+            "examples": [
+              "Mehdi Boulanoire"
+            ]
+          },
+          "assist_num": {
+            "type": "integer",
+            "examples": [
+              33
             ]
           }
         }
