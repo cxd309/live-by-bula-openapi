@@ -4,8 +4,10 @@ window.onload = function() {
   window.ui = SwaggerUIBundle({
     urls: [
       { url: "openapi-1.9.14.json", name: "1.9.14" },
+      { url: "openapi-1.9.17.json", name: "1.9.17" }
+      
     ],
-    "urls.primaryName": "1.9.14",
+    "urls.primaryName": "1.9.17",
     dom_id: "#swagger-ui",
     deepLinking: true,
     presets: [
