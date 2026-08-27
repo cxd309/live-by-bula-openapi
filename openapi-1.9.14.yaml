@@ -21,7 +21,7 @@ info:
 
     This document describes **Live! 1.9.14**. The response shapes are identical on **1.9.15** and **1.9.16**: `live/api/` is byte-for-byte the same between 1.9.14 and 1.9.15, and 1.9.16 changes one line of `ConfigManager.php` that alters a configuration *value* rather than any response shape. Check `app_version` in `_heartbeat.json` before trusting this document.
 
-    **1.9.17 is not covered.** It adds `teams[].reg_id` and `games[].time_utc`, and removes `seed.sotg_token`. Use the 1.9.17 specification for those deployments.
+    **1.9.17 is not covered.** It adds `teams[].reg_id` and `games[].time_utc`, removes `seed.sotg_token`, and fixes the heartbeat behaviour described below. Use the 1.9.17 specification for those deployments.
 
     ## Scope
 
@@ -88,6 +88,12 @@ paths:
         The front end re-reads this every `config.TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS` seconds. `cache_version` changes whenever the upstream data is rebuilt, so comparing it is a cheap way to detect new data without refetching everything.
 
         Unlike every other response, this document has **no** `meta` block. Its equivalent dynamic entity is `hb`, which returns only the outer three fields without `config`.
+
+        **The `config` block can disappear.** On this line a heartbeat rewrite - triggered by a cache wipe or a heartbeat refresh - writes the file with only `app_version`, `cache_version` and `last_updated_utc`, discarding `config` until the configuration writer next runs. A client that has just been handed a heartbeat with no `config` has no season id and no base path, and cannot proceed. Two of the older public deployments are sitting in exactly that state.
+
+        Treat `config` as required-but-not-guaranteed: fetch it, and if it is missing, either retry later or fall back to a season id learned some other way. 1.9.17 fixes this by preserving the existing block across a rewrite.
+
+        This file is also served with no cache directive on this line, so a browser may hold a stale copy; 1.9.17 adds `Cache-Control: no-cache, must-revalidate`.
       responses:
         "200":
           description: The deployment's version, cache state and configuration
