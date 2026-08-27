@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Live! by BULA JSON API",
-    "version": "1.9.14",
-    "summary": "Unofficial specification for the JSON data files behind Live! by BULA 1.9.14",
-    "description": "Unofficial specification for the static JSON files published by [Live! by BULA](https://beachultimate.org/livebybula/), the public results interface that sits on top of [UltiOrganizer](https://github.com/ktolonen/ultiorganizer).\n\nUltiOrganizer is the database and the web admin; Live! is the layer that adds a modern front end and this JSON API. Most field names come from UltiOrganizer's schema, which is why they read as lower-case run-together words (`teamname`, `fedinavg`, `spiritgiven`).\n\n## Which deployments this covers\n\nThis document describes **Live! 1.9.14**. The response shapes are identical on **1.9.15** and **1.9.16**: `live/api/` is byte-for-byte the same between 1.9.14 and 1.9.15, and 1.9.16 changes one line of `ConfigManager.php` that alters a configuration *value* rather than any response shape. Check `app_version` in `_heartbeat.json` before trusting this document.\n\n**1.9.17 is not covered.** It adds `teams[].reg_id` and `games[].time_utc`, and removes `seed.sotg_token`. Use the 1.9.17 specification for those deployments.\n\n## Scope\n\nOnly the static `{seasonId}_*.json` files are specified. They send `Access-Control-Allow-Origin: *`, so they are the only transport a browser on another origin can use.\n\nLive! also exposes a dynamic endpoint at `config.BASE_API_URL` (`index.php?view=live/api&entity=…`) which is what actually builds these files. It returns the same bodies, but sends no CORS headers, so it is unusable cross-origin and is not specified here. Each path below names the entity it corresponds to, should you need to reach it server-side.\n\n## Conventions\n\n- Booleans are integers `0` / `1`, marked `x-boolean-int` below. The heartbeat is the exception and uses real JSON booleans.\n- Timestamps are `YYYY-MM-DD HH:MM:SS` with no zone marker, in tournament-local time (see `season.timezone` and `season.utcOffset`).\n- In-game `time` values are seconds elapsed since the start of the game, not clock times.\n- Ids are integers that are unique only within one season, and their range is not predictable. A dedicated install numbers each season from 1; a shared install hosting several events continues from wherever the previous one finished. `country_id` is the exception, coming from a shared table in the 1000s.\n- Id ranges overlap across entity types, so the same number can be a valid pool id, series id, game id and team id at once. Never infer a type from a value.\n- Numeric strings are coerced to numbers throughout, **except** for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`, which are always left as strings. This is why `games[].name` arrives as `\"534\"` rather than `534`.\n- Fields are usually absent rather than null, so treat almost everything as optional. The games list is the strongest case: every `null`, `0`, `\"0\"` and `false` is stripped before the response is sent, so an absent field there may mean either \"unset\" or \"zero\".\n\nLive! by BULA is © BULA Ltd. Neither BULA nor UltiOrganizer has published, endorsed or reviewed this specification, and the API may break without warning.\n",
+    "version": "1.9.17",
+    "summary": "Unofficial specification for the JSON data files behind Live! by BULA 1.9.17",
+    "description": "Unofficial specification for the static JSON files published by [Live! by BULA](https://beachultimate.org/livebybula/), the public results interface that sits on top of [UltiOrganizer](https://github.com/ktolonen/ultiorganizer).\n\nUltiOrganizer is the database and the web admin; Live! is the layer that adds a modern front end and this JSON API. Most field names come from UltiOrganizer's schema, which is why they read as lower-case run-together words (`teamname`, `fedinavg`, `spiritgiven`).\n\n## Which deployments this covers\n\nThis document describes **Live! 1.9.17**, the newest release on the 1.9 line. Check `app_version` in `_heartbeat.json` before trusting it.\n\n**1.9.14 to 1.9.16 are not covered** - use the 1.9.14 specification for those. They differ from this document in three ways, all in `TeamManager` and `GameManager`:\n\n| Change                        | Effect                                                                      |\n| ----------------------------- | --------------------------------------------------------------------------- |\n| `teams[].reg_id` **added**    | Always present here, and always absent below                                 |\n| `games[].time_utc` **added**  | Present on every scheduled game here, and absent below                       |\n| `seed.sotg_token` **removed** | Gone here, published in the public feed on 1.9.16 and below                  |\n\nIf you have a response but not its `app_version`, those three fields identify the line unambiguously.\n\nThe `sotg_token` removal is a privacy fix: on 1.9.16 and older the team's spirit-submission token is served to anyone who fetches the team-detail file.\n\n## Scope\n\nOnly the static `{seasonId}_*.json` files are specified. They send `Access-Control-Allow-Origin: *`, so they are the only transport a browser on another origin can use.\n\nLive! also exposes a dynamic endpoint at `config.BASE_API_URL` (`index.php?view=live/api&entity=…`) which is what actually builds these files. It returns the same bodies, but sends no CORS headers, so it is unusable cross-origin and is not specified here. Each path below names the entity it corresponds to, should you need to reach it server-side.\n\n## Conventions\n\n- Booleans are integers `0` / `1`, marked `x-boolean-int` below. The heartbeat is the exception and uses real JSON booleans.\n- Timestamps are `YYYY-MM-DD HH:MM:SS` with no zone marker, in tournament-local time (see `season.timezone` and `season.utcOffset`).\n- In-game `time` values are seconds elapsed since the start of the game, not clock times.\n- Ids are integers that are unique only within one season, and their range is not predictable. A dedicated install numbers each season from 1; a shared install hosting several events continues from wherever the previous one finished. `country_id` is the exception, coming from a shared table in the 1000s.\n- Id ranges overlap across entity types, so the same number can be a valid pool id, series id, game id and team id at once. Never infer a type from a value.\n- Numeric strings are coerced to numbers throughout, **except** for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`, which are always left as strings. This is why `games[].name` arrives as `\"534\"` rather than `534`.\n- Fields are usually absent rather than null, so treat almost everything as optional. The games list is the strongest case: every `null`, `0`, `\"0\"` and `false` is stripped before the response is sent, so an absent field there may mean either \"unset\" or \"zero\".\n\nLive! by BULA is © BULA Ltd. Neither BULA nor UltiOrganizer has published, endorsed or reviewed this specification, and the API may break without warning.\n",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -13,10 +13,10 @@
   "servers": [
     {
       "url": "{origin}{basePath}",
-      "description": "Any Live! 1.9.14 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WBUC 2025 deployment.\n",
+      "description": "Any Live! 1.9.17 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WMUCC 2026 deployment.\n",
       "variables": {
         "origin": {
-          "default": "https://wbuc.wfdf.sport",
+          "default": "https://wmucc.wfdf.sport",
           "description": "Scheme and host of the deployment."
         },
         "basePath": {
@@ -68,7 +68,7 @@
           "heartbeat"
         ],
         "summary": "Season id, base URLs and deployment configuration",
-        "description": "The entry point, and the only file whose path you can know without asking. Everything else is built from it.\n\n`config.LIVE_SEASON_ID` is the filename prefix for every other endpoint, and `config.STATIC_CACHE_BASE_URL` is the path they hang off. Season id casing varies by deployment (`wbuc2025` lower-case, `26EYUCVIE` upper-case) and must be used verbatim.\n\nThe front end re-reads this every `config.TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS` seconds. `cache_version` changes whenever the upstream data is rebuilt, so comparing it is a cheap way to detect new data without refetching everything.\n\nUnlike every other response, this document has **no** `meta` block. Its equivalent dynamic entity is `hb`, which returns only the outer three fields without `config`.\n",
+        "description": "The entry point, and the only file whose path you can know without asking. Everything else is built from it.\n\n`config.LIVE_SEASON_ID` is the filename prefix for every other endpoint, and `config.STATIC_CACHE_BASE_URL` is the path they hang off. Season id casing varies by deployment (`wmucc2026` lower-case, `26EYUCVIE` upper-case) and must be used verbatim.\n\nThe front end re-reads this every `config.TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS` seconds. `cache_version` changes whenever the upstream data is rebuilt, so comparing it is a cheap way to detect new data without refetching everything.\n\nUnlike every other response, this document has **no** `meta` block. Its equivalent dynamic entity is `hb`, which returns only the outer three fields without `config`.\n\nTwo things changed here in 1.9.17, both worth relying on:\n\n- The file is served with `Cache-Control: no-cache, must-revalidate`, so a configuration change is picked up immediately rather than sitting behind a browser cache. Older releases send no cache directive at all.\n- The `config` block now survives a heartbeat rewrite. On 1.9.16 and older, wiping the cache or refreshing the heartbeat rewrote this file with only `app_version`, `cache_version` and `last_updated_utc`, **discarding `config` entirely** until something re-ran the configuration writer. A deployment on an older release can therefore serve a heartbeat with no `config` block at all, which leaves a client with no season id and no base path to work from.\n",
         "responses": {
           "200": {
             "description": "The deployment's version, cache state and configuration",
@@ -122,7 +122,7 @@
           "teams"
         ],
         "summary": "Every team's record, points and spirit average",
-        "description": "One request for the whole event's results numbers. This is the endpoint to use for a results table; the reference endpoint carries team identity but no results.\n\nNote the container is an **object keyed by team id**, not an array, unlike `teams` in the reference response.\n\n`final_standing` is populated here for every team, and matched `final_standing_calculated` in every row checked. The same teams have `final_standing: 0` in the reference response, so this endpoint gives the resolved value while the reference endpoint gives the raw stored one.\n\nEvery field is assembled explicitly rather than passed through from the database, so this endpoint carries a smaller and more stable set of fields than the reference or team-detail endpoints. `reg_id` is not among them on this line; it is added in 1.9.17.\n\nDynamic entity: `teams`. Server-side cache lifetime 120 seconds.\n",
+        "description": "One request for the whole event's results numbers. This is the endpoint to use for a results table; the reference endpoint carries team identity but no results.\n\nNote the container is an **object keyed by team id**, not an array, unlike `teams` in the reference response.\n\n`final_standing` is populated here for every team, and matched `final_standing_calculated` in every row checked. The same teams have `final_standing: 0` in the reference response, so this endpoint gives the resolved value while the reference endpoint gives the raw stored one.\n\nEvery field is assembled explicitly rather than passed through from the database, so this endpoint carries a smaller and more stable set of fields than the reference or team-detail endpoints.\n\n`reg_id` is **new in 1.9.17**. It is always present, but is explicitly `null` rather than absent where the team has no registration id - one of the few places in this API that sends a null instead of omitting the field.\n\nDynamic entity: `teams`. Server-side cache lifetime 120 seconds.\n",
         "responses": {
           "200": {
             "description": "Every team's aggregate record",
@@ -152,7 +152,7 @@
           "teams"
         ],
         "summary": "One team - squad list, player stats, and spirit given and received",
-        "description": "The richest per-team endpoint, and the only place a squad list appears. `players[]` carries every rostered player with their event totals already aggregated, so player statistics do not require crawling every game.\n\n`spiritgiven` is the only place in the API showing what a team *awarded* its opponents rather than what it received, which is what you need to spot harsh or generous raters.\n\nBoth spirit arrays name the **opponent**, never the team itself: `spiritgiven[].givento` and `spiritreceived[].givenby` both hold the other team's name. Direction comes from which array a record is in, not from its fields.\n\nThe spirit blocks are only present when the event has spirit scoring both enabled and public (`season.spirit` is `1`). Comments are blanked to `null` unless the event also enables spirit comments.\n\n**This response exposes `seed.sotg_token`**, the token tied to the team's spirit submission. It is removed in 1.9.17, but is public on every deployment running 1.9.16 or older.\n\nDynamic entity: `teams` with `id={teamId}`. Server-side cache lifetime 120 seconds.\n",
+        "description": "The richest per-team endpoint, and the only place a squad list appears. `players[]` carries every rostered player with their event totals already aggregated, so player statistics do not require crawling every game.\n\n`spiritgiven` is the only place in the API showing what a team *awarded* its opponents rather than what it received, which is what you need to spot harsh or generous raters.\n\nBoth spirit arrays name the **opponent**, never the team itself: `spiritgiven[].givento` and `spiritreceived[].givenby` both hold the other team's name. Direction comes from which array a record is in, not from its fields.\n\nThe spirit blocks are only present when the event has spirit scoring both enabled and public (`season.spirit` is `1`). Comments are blanked to `null` unless the event also enables spirit comments.\n\n**`seed.sotg_token` is removed in 1.9.17** and is not present here. On 1.9.16 and older this response published the team's spirit-submission token to anyone who fetched the file, so its absence is the clearest single marker that a deployment is on this release or later.\n\nDynamic entity: `teams` with `id={teamId}`. Server-side cache lifetime 120 seconds.\n",
         "responses": {
           "200": {
             "description": "One team's roster, record and spirit detail",
@@ -179,7 +179,7 @@
           "games"
         ],
         "summary": "Every game in the event, with scores but no detail",
-        "description": "The full schedule and every result in one file. This is the largest of the routine endpoints - expect a few hundred kilobytes at a full international event.\n\n**Falsy fields are stripped.** Every value that is `null`, `0`, `\"0\"` or `false` is removed before the response is sent, so an absent field here is ambiguous between \"unset\" and \"zero\". Empty strings survive, which is why `liveurl` sometimes appears as `\"\"`. The one exception is that `homescore` and `visitorscore` are put back for any game that is not `scheduled`, so a genuine 0-0 in progress is still reported.\n\nBecause of that stripping, the absence of `isongoing` is how you tell a game is not live; `status` is the field to read instead.\n\n`visitorsotg` is present here - the opponent's spirit score for the game - while `homesotg` is stripped. Do not read anything into the asymmetry; the field is not deliberately published.\n\nDynamic entity: `games`. Cache lifetime varies from 1.5 minutes during the event to 60 minutes more than 72 hours either side of it.\n",
+        "description": "The full schedule and every result in one file. This is the largest of the routine endpoints - expect a few hundred kilobytes at a full international event.\n\n**Falsy fields are stripped.** Every value that is `null`, `0`, `\"0\"` or `false` is removed before the response is sent, so an absent field here is ambiguous between \"unset\" and \"zero\". Empty strings survive, which is why `liveurl` sometimes appears as `\"\"`. The one exception is that `homescore` and `visitorscore` are put back for any game that is not `scheduled`, so a genuine 0-0 in progress is still reported.\n\nBecause of that stripping, the absence of `isongoing` is how you tell a game is not live; `status` is the field to read instead.\n\n`visitorsotg` is present here - the opponent's spirit score for the game - while `homesotg` is stripped. Do not read anything into the asymmetry; the field is not deliberately published.\n\n**`time_utc` is new in 1.9.17** and is the field to schedule against. It is computed per game from `season.timezone` with full daylight-saving handling, which makes it more trustworthy than applying `season.utcOffset` yourself - that offset is a single value fixed for the whole event, so it is wrong on either side of a clock change. `time_utc` is added after the falsy stripping described above, so it is never removed, but it is omitted for any game with no `time` and for the whole endpoint if the season's timezone is missing or unrecognised.\n\nDynamic entity: `games`. Cache lifetime varies from 1.5 minutes during the event to 60 minutes more than 72 hours either side of it.\n",
         "responses": {
           "200": {
             "description": "Every game in the season",
@@ -435,7 +435,7 @@
         },
         "examples": {
           "lowercase": {
-            "value": "wbuc2025"
+            "value": "wmucc2026"
           },
           "uppercase": {
             "value": "26EYUCVIE"
@@ -555,7 +555,7 @@
             "type": "string",
             "description": "Live! version that produced this document.",
             "examples": [
-              "1.9.14"
+              "1.9.17"
             ]
           }
         }
@@ -575,7 +575,7 @@
             "type": "string",
             "description": "Live! version serving this deployment. **Not reliably semver** - `dev` and build stamps such as `20250612.082841` are also seen in the wild, so always parse it with a fallback.\n",
             "examples": [
-              "1.9.14"
+              "1.9.17"
             ]
           },
           "cache_version": {
@@ -611,7 +611,7 @@
             "type": "string",
             "description": "Filename prefix for every other endpoint. Use verbatim; casing varies by deployment.",
             "examples": [
-              "wbuc2025",
+              "wmucc2026",
               "26EYUCVIE"
             ]
           },
@@ -626,13 +626,13 @@
             "type": "string",
             "description": "May be an empty string even on a live event. Prefer `season.name` from the reference endpoint.",
             "examples": [
-              "WFDF WBUC 2025"
+              "WFDF WMUCC 2026"
             ]
           },
           "TOURNAMENT_LOCATION": {
             "type": "string",
             "examples": [
-              "Portimão, Portugal",
+              "Nottingham, United Kingdom",
               "Gdańsk, Poland"
             ]
           },
@@ -647,20 +647,20 @@
             "type": "string",
             "description": "Tournament logo. Either root-relative or an absolute URL.",
             "examples": [
-              "/live/conf/logos/wbuc-2025.png"
+              "/live/conf/logos/wmucc-2026.png"
             ]
           },
           "SOCIAL_SHARE_LOGO_PATH": {
             "type": "string",
             "description": "Image used for link previews.",
             "examples": [
-              "/live/conf/logos/wbuc-2025.png"
+              "/live/conf/logos/wmucc-2026.png"
             ]
           },
           "FAVICON_PATH": {
             "type": "string",
             "examples": [
-              "/live/conf/logos/wbuc-favicon.png"
+              "/live/conf/logos/wmucc-2026.png"
             ]
           },
           "FIELD_NAMES": {
@@ -737,7 +737,7 @@
             ],
             "description": "Link to the tournament's own site. Explicitly `null` on some deployments.",
             "examples": [
-              "https://wbuc.sport"
+              "https://www.wmucc.sport/"
             ]
           },
           "CONTACT_EMAILS": {
@@ -755,7 +755,7 @@
             },
             "examples": [
               [
-                "https://wbuc.wfdf.sport"
+                "https://wmucc.wfdf.sport"
               ]
             ]
           },
@@ -922,40 +922,40 @@
             "type": "string",
             "description": "Same value as `config.LIVE_SEASON_ID`.",
             "examples": [
-              "wbuc2025"
+              "wmucc2026"
             ]
           },
           "name": {
             "type": "string",
-            "description": "Full event name. More reliable than `config.TOURNAMENT_NAME`, which is often empty.",
+            "description": "Full event name. More reliable than `config.TOURNAMENT_NAME`, which is often empty - it is an empty string on the deployment sampled.",
             "examples": [
-              "WBUC 2025"
+              "WMUCC 2026"
             ]
           },
           "starttime": {
             "type": "string",
             "description": "First day of the event, at midnight local time.",
             "examples": [
-              "2025-11-16 00:00:00"
+              "2026-06-28 00:00:00"
             ]
           },
           "endtime": {
             "type": "string",
             "description": "Last day of the event, at midnight local time. Note this is the start of the final day, not its end.",
             "examples": [
-              "2025-11-22 00:00:00"
+              "2026-07-04 00:00:00"
             ]
           },
           "timezone": {
             "type": "string",
-            "description": "IANA zone every local timestamp in the API is expressed in.",
+            "description": "IANA zone every local timestamp in the API is expressed in, and the zone `games[].time_utc` is converted from.",
             "examples": [
-              "Europe/Lisbon"
+              "Europe/London"
             ]
           },
           "utcOffset": {
             "type": "string",
-            "description": "Offset in effect during the event. Derived rather than stored, and fixed for the whole event, so it will be wrong for an event that straddles a daylight-saving change.",
+            "description": "Offset in effect during the event. Derived rather than stored, and fixed for the whole event, so it will be wrong for an event that straddles a daylight-saving change. Prefer `games[].time_utc`, which is converted per game and handles the change correctly.",
             "examples": [
               "+01:00",
               "-04:00"
@@ -977,8 +977,8 @@
             "type": "string",
             "description": "Playing surface and format.",
             "examples": [
-              "beach",
               "outdoor",
+              "beach",
               "indoor"
             ]
           },
@@ -986,7 +986,7 @@
             "type": "integer",
             "description": "Total players across every roster, and the length of the players endpoint's list.",
             "examples": [
-              2277
+              3396
             ]
           },
           "timeslots": {
@@ -997,7 +997,7 @@
             },
             "examples": [
               [
-                60
+                120
               ],
               [
                 100,
@@ -1143,7 +1143,7 @@
               "string",
               "null"
             ],
-            "description": "A short URL-friendly name for the division, added only for series listed in the deployment's own `LIVE_SERIES_SLUGS` map. That map is empty by default, so most deployments omit this field entirely, and one that sets it will carry `slug` on some series and not others.\n\nAbsent on all three in-range deployments checked (1.9.14, 1.9.15, 1.9.16) and seen only on installs reporting a non-semver `app_version`. Treat it as optional and never key off it.\n",
+            "description": "A short URL-friendly name for the division, added only for series listed in the deployment's own `LIVE_SERIES_SLUGS` map. That map is empty by default, so most deployments omit this field entirely, and one that sets it will carry `slug` on some series and not others.\n\nAbsent on all four 1.9.17 deployments checked, and seen only on installs reporting a non-semver `app_version`. Treat it as optional and never key off it.\n",
             "examples": [
               "GGM"
             ]
@@ -1293,9 +1293,9 @@
           },
           "reg_id": {
             "type": "integer",
-            "description": "The team's id in the organiser's registration system. Present here on 1.9.14, unlike on the teams endpoint.",
+            "description": "The team's id in the organiser's registration system. From 1.9.17 the teams endpoint carries it too, so the two agree; on older releases it appeared only here.",
             "examples": [
-              10
+              12
             ]
           },
           "final_standing": {
@@ -1447,10 +1447,11 @@
       "TeamStats": {
         "type": "object",
         "title": "TeamStats",
-        "description": "A team's aggregate record across the event. Identity fields duplicate `ReferenceTeam`; the rest are results.\n\nEvery field here is assembled explicitly rather than passed through from the database, so the set is fixed: all seventeen properties below appeared on all 136 teams at the event sampled, and nothing else did.\n",
+        "description": "A team's aggregate record across the event. Identity fields duplicate `ReferenceTeam`; the rest are results.\n\nEvery field here is assembled explicitly rather than passed through from the database, so the set is fixed: all eighteen properties below appeared on all 150 teams at the event sampled, and nothing else did.\n",
         "required": [
           "team_id",
           "name",
+          "reg_id",
           "series",
           "country",
           "seed",
@@ -1469,20 +1470,30 @@
           "team_id": {
             "type": "integer",
             "examples": [
-              68
+              74
             ]
           },
           "name": {
             "type": "string",
             "examples": [
-              "Australia"
+              "Adelaide Old Guard"
+            ]
+          },
+          "reg_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The team's id in the organiser's registration system. **New in 1.9.17** - absent entirely on 1.9.16 and older.\n\nAlways present, but explicitly `null` where the team has none, rather than being omitted the way most unset fields in this API are. The same value appears as `seed.reg_id` in the team-detail response.\n",
+            "examples": [
+              12
             ]
           },
           "series": {
             "type": "integer",
             "description": "Division id.",
             "examples": [
-              8
+              7
             ]
           },
           "country": {
@@ -1639,13 +1650,13 @@
             "type": "string",
             "description": "Season id, matching `config.LIVE_SEASON_ID`.",
             "examples": [
-              "wbuc2025"
+              "wmucc2026"
             ]
           },
           "seasonname": {
             "type": "string",
             "examples": [
-              "WBUC 2025"
+              "WMUCC 2026"
             ]
           },
           "series": {
@@ -1792,7 +1803,7 @@
       "TeamSeed": {
         "type": "object",
         "title": "TeamSeed",
-        "description": "The team's seeding and current placement. Largely repeats the parent object's identity fields, and carries three that appear nowhere else.",
+        "description": "The team's seeding and current placement. Largely repeats the parent object's identity fields.\n\nOn 1.9.16 and older this object also carried `sotg_token`, the team's spirit-submission token. It is stripped in 1.9.17 and will not appear.\n",
         "properties": {
           "team_id": {
             "type": "integer",
@@ -1881,13 +1892,6 @@
             "type": [
               "string",
               "null"
-            ]
-          },
-          "sotg_token": {
-            "type": "string",
-            "description": "Opaque token tied to this team's spirit submission. **Published in the public feed on this line** - it is removed in 1.9.17, so its presence is a reliable way to tell a pre-1.9.17 deployment from a later one.\n",
-            "examples": [
-              "b57cbc65fdea445fb349b9cc83f5f9c9"
             ]
           }
         }
@@ -2124,7 +2128,7 @@
       "Game": {
         "type": "object",
         "title": "Game",
-        "description": "One game as it appears in the games list: scheduling, scores and status, with no per-goal detail.\n\n**Read the absence of a field carefully.** Every `null`, `0`, `\"0\"` and `false` is stripped from this object before it is sent, so `valid` present means `1` and `valid` absent means `0`. Empty strings are not stripped. `homescore` and `visitorscore` are the exception - they are restored to `0` for any game that is not `scheduled`.\n\nFour fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.\n",
+        "description": "One game as it appears in the games list: scheduling, scores and status, with no per-goal detail.\n\n**Read the absence of a field carefully.** Every `null`, `0`, `\"0\"` and `false` is stripped from this object before it is sent, so `valid` present means `1` and `valid` absent means `0`. Empty strings are not stripped. `homescore` and `visitorscore` are the exception - they are restored to `0` for any game that is not `scheduled`.\n\nFour fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.\n\n**The whole game row is selected, so a deployment whose UltiOrganizer carries extra columns will send them here.** Three such fields are described at the end of this schema; they come from the install underneath rather than from Live!, so treat any of them as optional and expect others this document does not list.\n",
         "required": [
           "game_id",
           "hometeam",
@@ -2180,9 +2184,16 @@
           },
           "time": {
             "type": "string",
-            "description": "Scheduled start, tournament-local. Absent for an unscheduled game. There is no `time_utc` on this line; it is added in 1.9.17.",
+            "description": "Scheduled start, tournament-local. Absent for an unscheduled game.",
             "examples": [
-              "2025-11-17 11:15:00"
+              "2026-07-02 17:00:00"
+            ]
+          },
+          "time_utc": {
+            "type": "string",
+            "description": "The same instant as `time`, converted to UTC. **New in 1.9.17.**\n\nPrefer this over combining `time` with `season.utcOffset`: it is computed per game against `season.timezone`, so it handles a daylight-saving change during the event, which the single fixed offset cannot. Same `YYYY-MM-DD HH:MM:SS` format, with no zone marker despite being UTC.\n\nAdded after the falsy stripping, so it is never removed for being empty. It is omitted for a game with no `time`, and for every game if the season's timezone is missing or not a recognised IANA name.\n",
+            "examples": [
+              "2026-07-02 16:00:00"
             ]
           },
           "pool": {
@@ -2292,6 +2303,24 @@
             "examples": [
               "5B"
             ]
+          },
+          "ssdata": {
+            "type": "string",
+            "description": "Streaming metadata, as a **JSON document encoded inside a string** - parse it a second time to read it. Observed keys are `is_streamed`, `event_name`, `venue`, `delay`, `scoreboard`, `game_duration_scoreboard`, `game_duration_scheduling` and `labels`.\n\nNot a Live! field. It comes from an extra `uo_game` column present on some UltiOrganizer installs, so it appears on the shared `ultimatefederation.eu` deployments and on neither WFDF-hosted one. Do not treat it as guaranteed by this release.\n",
+            "examples": [
+              "{\"is_streamed\":true,\"event_name\":\"FRA (WMN) - HUN (WMN)\",\"venue\":32,\"delay\":60}"
+            ]
+          },
+          "hasstarted": {
+            "type": "integer",
+            "description": "Whether the game has started, as recorded by the install rather than derived by Live!. **Not a `0`/`1` flag** - the only value observed is `2`, on games that had finished, so the value space is not established. Prefer `status`.\n\nAnother install-specific `uo_game` column, seen on one deployment only. Falsy values are stripped, so `0` never appears.\n",
+            "examples": [
+              2
+            ]
+          },
+          "show_spirit": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether spirit scores are shown for this game. Install-specific `uo_game` column, seen on one deployment only, and only ever as `1` because `0` is stripped.\n"
           }
         }
       },
@@ -2839,7 +2868,7 @@
           "season": {
             "type": "string",
             "examples": [
-              "wbuc2025"
+              "wmucc2026"
             ]
           },
           "color": {
@@ -2987,7 +3016,7 @@
           "season": {
             "type": "string",
             "examples": [
-              "wbuc2025"
+              "wmucc2026"
             ]
           },
           "type": {
