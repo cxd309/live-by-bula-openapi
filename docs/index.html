@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Live! by BULA API Specification</title>
+    <title>Live! by BULA OpenAPI Specification</title>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
@@ -14,7 +14,7 @@
 
   <body class="bg-body-tertiary">
     <main class="container py-5" style="max-width: 56rem">
-      <h1 class="mb-1">Live! by BULA API</h1>
+      <h1 class="mb-1">Live! by BULA OpenAPI</h1>
       <p class="lead text-body-secondary">
         An unofficial OpenAPI 3.1 specification for the Live! JSON API, the
         feeds behind
@@ -51,7 +51,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>1.9.14</code> – <code>1.9.16</code></td>
+            <td><code>1.9.14</code> - <code>1.9.16</code></td>
             <td><a href="openapi-1.9.14.json">openapi-1.9.14.json</a></td>
             <td><span class="badge text-bg-success">Complete</span></td>
           </tr>
@@ -60,10 +60,10 @@
             <td><a href="openapi-1.9.17.json">openapi-1.9.17.json</a></td>
             <td><span class="badge text-bg-success">Complete</span></td>
           </tr>
-          <tr class="text-body-secondary">
+          <tr>
             <td><code>3.0.x</code></td>
-            <td>—</td>
-            <td><span class="badge text-bg-secondary">Planned</span></td>
+            <td><a href="openapi-3.0.6.json">openapi-3.0.6.json</a></td>
+            <td><span class="badge text-bg-success">Complete</span></td>
           </tr>
         </tbody>
       </table>
@@ -88,9 +88,10 @@
                 <a href="redoc.html?v=1.9.14" class="link-secondary">1.9.14</a>
                 &middot;
                 <a href="redoc.html?v=1.9.17" class="link-secondary">1.9.17</a>
+                &middot;
+                <a href="redoc.html?v=3.0.6" class="link-secondary">3.0.6</a>
               </p>
-              <a href="redoc.html?v=1.9.17" class="btn btn-primary"
-              >Open ReDoc</a>
+              <a href="redoc.html" class="btn btn-primary">Open ReDoc</a>
             </div>
           </div>
         </div>
@@ -99,7 +100,7 @@
       <h2 class="h5 mt-5">The short version</h2>
       <p class="text-body-secondary">
         Every event exposes the same set of static JSON files. Nothing is
-        hardcoded — start at the heartbeat to discover the season id and base
+        hardcoded - start at the heartbeat to discover the season id and base
         path, then build the rest of the URLs from it:
       </p>
       <pre class="bg-body p-3 border rounded"><code>GET /{prefix}/live/data/_heartbeat.json
@@ -137,6 +138,9 @@ GET {base}/{seasonId}_config.json                full deployment config + proven
         &middot;
         <a href="openapi-1.9.17.json" class="link-secondary"
         >openapi-1.9.17.json</a>
+        &middot;
+        <a href="openapi-3.0.6.json" class="link-secondary"
+        >openapi-3.0.6.json</a>
         &middot;
         <a
           href="https://github.com/cxd309/live-by-bula-openapi"
