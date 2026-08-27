@@ -55,10 +55,10 @@
             <td><a href="openapi-1.9.14.json">openapi-1.9.14.json</a></td>
             <td><span class="badge text-bg-success">Complete</span></td>
           </tr>
-          <tr class="text-body-secondary">
+          <tr>
             <td><code>1.9.17</code></td>
-            <td>—</td>
-            <td><span class="badge text-bg-secondary">Planned</span></td>
+            <td><a href="openapi-1.9.17.json">openapi-1.9.17.json</a></td>
+            <td><span class="badge text-bg-success">Complete</span></td>
           </tr>
           <tr class="text-body-secondary">
             <td><code>3.0.x</code></td>
@@ -85,9 +85,11 @@
             <div class="card-body">
               <h2 class="card-title h5">ReDoc</h2>
               <p class="card-text text-body-secondary small">
-                A single-page reference, easier to read end to end.
+                <a href="redoc.html?v=1.9.14" class="link-secondary">1.9.14</a>
+                &middot;
+                <a href="redoc.html?v=1.9.17" class="link-secondary">1.9.17</a>
               </p>
-              <a href="redoc.html?v=1.9.14" class="btn btn-primary"
+              <a href="redoc.html?v=1.9.17" class="btn btn-primary"
               >Open ReDoc</a>
             </div>
           </div>
@@ -103,7 +105,7 @@
       <pre class="bg-body p-3 border rounded"><code>GET /{prefix}/live/data/_heartbeat.json
     -> config.LIVE_SEASON_ID        e.g. "wbuc2025" (casing varies, use verbatim)
     -> config.STATIC_CACHE_BASE_URL e.g. "/live/data/"
-    -> app_version                  e.g. "1.9.14"
+    -> app_version                  e.g. "1.9.14" or "1.9.17"
 
 GET {base}/{seasonId}_reference.json             season, divisions, pools, teams, countries
 GET {base}/{seasonId}_teams.json                 per-team W/L, points for/against, spirit
@@ -132,6 +134,9 @@ GET {base}/{seasonId}_config.json                full deployment config + proven
       <p class="mt-4">
         <a href="openapi-1.9.14.json" class="link-secondary"
         >openapi-1.9.14.json</a>
+        &middot;
+        <a href="openapi-1.9.17.json" class="link-secondary"
+        >openapi-1.9.17.json</a>
         &middot;
         <a
           href="https://github.com/cxd309/live-by-bula-openapi"

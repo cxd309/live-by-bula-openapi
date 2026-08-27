@@ -12,7 +12,7 @@
     // ReDoc has no built-in version switcher, so pick the spec from ?v=<version>.
       // Match against a fixed list rather than interpolating the query string
       // straight into the URL, so ?v=//example.com cannot load a foreign spec.
-      var VERSIONS = ["1.9.14"];
+      var VERSIONS = ["1.9.14", "1.9.17"];
       var requested = new URLSearchParams(location.search).get("v");
       var version = VERSIONS.indexOf(requested) !== -1 ? requested : VERSIONS[0];
       Redoc.init("openapi-" + version + ".json", {}, document.getElementById("redoc"));
