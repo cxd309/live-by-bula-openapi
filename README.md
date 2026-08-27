@@ -178,16 +178,13 @@ Five known deployments are outside the supported set. Probed 2026-08-27 and ever
 
 Their `app_version` values are build stamps or `dev` rather than releases, so none can be version-matched. The shape markers place all five on the **1.9.14–1.9.16** line: `seed.sotg_token` present, `teams[].reg_id` and `games[].time_utc` absent.
 
-| Event                                                   | `app_version`     | Season id   | Data base path           | Filenames  | CORS | Heartbeat            | What blocks it           |
-| ------------------------------------------------------- | ----------------- | ----------- | ------------------------ | ---------- | ---- | -------------------- | ------------------------ |
-| [EBUCC 2025](https://live.ebucc.eu/live/data/reference.json)                     | `20250612.082841` | `ebucc2025` | `/live/data/`            | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
-| [EBUCC 2023](https://live.ebucc.eu/scores2023/live/data/reference.json)          | `20250612.082841` | `EBUCC2023` | `/scores2023/live/data/` | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
+| Event                                                                                   | `app_version`     | Season id   | Data base path           | Filenames  | CORS | Heartbeat            | What blocks it           |
+| --------------------------------------------------------------------------------------- | ----------------- | ----------- | ------------------------ | ---------- | ---- | -------------------- | ------------------------ |
+| [EBUCC 2025](https://live.ebucc.eu/live/data/reference.json)                            | `20250612.082841` | `ebucc2025` | `/live/data/`            | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
+| [EBUCC 2023](https://live.ebucc.eu/scores2023/live/data/reference.json)                 | `20250612.082841` | `EBUCC2023` | `/scores2023/live/data/` | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
 | [EUCF 2025 Wroclaw](https://eucf.ultimatefederation.eu/live/data/e2cf25_reference.json) | `1.8.2`           | `e2cf25`    | `/live/data/`            | prefixed   | `*`  | no `config` block    | season id undiscoverable |
-| [WBUCC 2024](https://live.wbucc.org/live/data/reference.json)                    | `20241019.151221` | _(none)_    | `/live/data/`            | unprefixed | none | embedded in the HTML | no CORS                  |
-| [WWUC 2025](https://results.wfdf.sport/wwuc/live/data/WWUC2025_reference.json)            | `dev`             | `WWUC2025`  | `/wwuc/live/data/`       | prefixed   | `*`  | full, with `config`  | `app_version` only       |
-
-
-
+| [WBUCC 2024](https://live.wbucc.org/live/data/reference.json)                           | `20241019.151221` | _(none)_    | `/live/data/`            | unprefixed | none | embedded in the HTML | no CORS                  |
+| [WWUC 2025](https://results.wfdf.sport/wwuc/live/data/WWUC2025_reference.json)          | `dev`             | `WWUC2025`  | `/wwuc/live/data/`       | prefixed   | `*`  | full, with `config`  | `app_version` only       |
 
 ## Related
 

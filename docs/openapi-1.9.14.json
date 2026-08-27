@@ -1,0 +1,4266 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Live! by BULA JSON API",
+    "version": "1.9.14",
+    "summary": "Unofficial specification for the JSON data files behind Live! by BULA 1.9.14",
+    "description": "Unofficial specification for the static JSON files published by [Live! by BULA](https://beachultimate.org/livebybula/), the public results interface that sits on top of [UltiOrganizer](https://github.com/ktolonen/ultiorganizer).\n\nUltiOrganizer is the database and the web admin; Live! is the layer that adds a modern front end and this JSON API. Most field names come from UltiOrganizer's schema, which is why they read as lower-case run-together words (`teamname`, `fedinavg`, `spiritgiven`).\n\n## Which deployments this covers\n\nThis document describes **Live! 1.9.14**. The response shapes are identical on **1.9.15** and **1.9.16**: `live/api/` is byte-for-byte the same between 1.9.14 and 1.9.15, and 1.9.16 changes one line of `ConfigManager.php` that alters a configuration *value* rather than any response shape. Check `app_version` in `_heartbeat.json` before trusting this document.\n\n**1.9.17 is not covered.** It adds `teams[].reg_id` and `games[].time_utc`, and removes `seed.sotg_token`. Use the 1.9.17 specification for those deployments.\n\n## Scope\n\nOnly the static `{seasonId}_*.json` files are specified. They send `Access-Control-Allow-Origin: *`, so they are the only transport a browser on another origin can use.\n\nLive! also exposes a dynamic endpoint at `config.BASE_API_URL` (`index.php?view=live/api&entity=…`) which is what actually builds these files. It returns the same bodies, but sends no CORS headers, so it is unusable cross-origin and is not specified here. Each path below names the entity it corresponds to, should you need to reach it server-side.\n\n## Conventions\n\n- Booleans are integers `0` / `1`, marked `x-boolean-int` below. The heartbeat is the exception and uses real JSON booleans.\n- Timestamps are `YYYY-MM-DD HH:MM:SS` with no zone marker, in tournament-local time (see `season.timezone` and `season.utcOffset`).\n- In-game `time` values are seconds elapsed since the start of the game, not clock times.\n- Ids are integers that are unique only within one season, and their range is not predictable. A dedicated install numbers each season from 1; a shared install hosting several events continues from wherever the previous one finished. `country_id` is the exception, coming from a shared table in the 1000s.\n- Id ranges overlap across entity types, so the same number can be a valid pool id, series id, game id and team id at once. Never infer a type from a value.\n- Numeric strings are coerced to numbers throughout, **except** for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`, which are always left as strings. This is why `games[].name` arrives as `\"534\"` rather than `534`.\n- Fields are usually absent rather than null, so treat almost everything as optional. The games list is the strongest case: every `null`, `0`, `\"0\"` and `false` is stripped before the response is sent, so an absent field there may mean either \"unset\" or \"zero\".\n\nLive! by BULA is © BULA Ltd. Neither BULA nor UltiOrganizer has published, endorsed or reviewed this specification, and the API may break without warning.\n",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "{origin}{basePath}",
+      "description": "Any Live! 1.9.14 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WBUC 2025 deployment.\n",
+      "variables": {
+        "origin": {
+          "default": "https://wbuc.wfdf.sport",
+          "description": "Scheme and host of the deployment."
+        },
+        "basePath": {
+          "default": "/live/data",
+          "description": "`config.STATIC_CACHE_BASE_URL` from the heartbeat, without its trailing slash."
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "heartbeat",
+      "description": "Discovery of the season id and base URL. Fetch first."
+    },
+    {
+      "name": "reference",
+      "description": "Slow-moving structural data - the event, its divisions, pools, teams, countries and fields."
+    },
+    {
+      "name": "teams",
+      "description": "Team records, rosters and per-team spirit detail."
+    },
+    {
+      "name": "games",
+      "description": "The schedule, live scores and per-game detail."
+    },
+    {
+      "name": "standings",
+      "description": "Pool tables and brackets, as pre-rendered HTML."
+    },
+    {
+      "name": "spirit",
+      "description": "Division-level Spirit of the Game leaderboards."
+    },
+    {
+      "name": "players",
+      "description": "Player ids and aggregated player statistics."
+    },
+    {
+      "name": "config",
+      "description": "The deployment's full configuration, wider than the heartbeat's copy."
+    }
+  ],
+  "paths": {
+    "/_heartbeat.json": {
+      "get": {
+        "operationId": "getHeartbeat",
+        "tags": [
+          "heartbeat"
+        ],
+        "summary": "Season id, base URLs and deployment configuration",
+        "description": "The entry point, and the only file whose path you can know without asking. Everything else is built from it.\n\n`config.LIVE_SEASON_ID` is the filename prefix for every other endpoint, and `config.STATIC_CACHE_BASE_URL` is the path they hang off. Season id casing varies by deployment (`wbuc2025` lower-case, `26EYUCVIE` upper-case) and must be used verbatim.\n\nThe front end re-reads this every `config.TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS` seconds. `cache_version` changes whenever the upstream data is rebuilt, so comparing it is a cheap way to detect new data without refetching everything.\n\nUnlike every other response, this document has **no** `meta` block. Its equivalent dynamic entity is `hb`, which returns only the outer three fields without `config`.\n",
+        "responses": {
+          "200": {
+            "description": "The deployment's version, cache state and configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Heartbeat"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_reference.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getReference",
+        "tags": [
+          "reference"
+        ],
+        "summary": "The event, its divisions, pools, teams, countries and fields",
+        "description": "Everything structural about the event in one request, and the file to fetch after the heartbeat. Ids used by every other endpoint are defined here.\n\nThe five collections are independent lists joined by id: a team names its `series` and `country`, and a pool names its `series_id`. There is no nesting.\n\nThis is slow-moving data. Only `teams[].final_standing_calculated` changes as an event progresses; everything else is usually fixed once the schedule is published.\n\nDynamic entity: `reference`. Server-side cache lifetime 300 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "The event's structure and entrants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_teams.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getTeams",
+        "tags": [
+          "teams"
+        ],
+        "summary": "Every team's record, points and spirit average",
+        "description": "One request for the whole event's results numbers. This is the endpoint to use for a results table; the reference endpoint carries team identity but no results.\n\nNote the container is an **object keyed by team id**, not an array, unlike `teams` in the reference response.\n\n`final_standing` is populated here for every team, and matched `final_standing_calculated` in every row checked. The same teams have `final_standing: 0` in the reference response, so this endpoint gives the resolved value while the reference endpoint gives the raw stored one.\n\nEvery field is assembled explicitly rather than passed through from the database, so this endpoint carries a smaller and more stable set of fields than the reference or team-detail endpoints. `reg_id` is not among them on this line; it is added in 1.9.17.\n\nDynamic entity: `teams`. Server-side cache lifetime 120 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "Every team's aggregate record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_teams_{teamId}.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        },
+        {
+          "$ref": "#/components/parameters/TeamId"
+        }
+      ],
+      "get": {
+        "operationId": "getTeam",
+        "tags": [
+          "teams"
+        ],
+        "summary": "One team - squad list, player stats, and spirit given and received",
+        "description": "The richest per-team endpoint, and the only place a squad list appears. `players[]` carries every rostered player with their event totals already aggregated, so player statistics do not require crawling every game.\n\n`spiritgiven` is the only place in the API showing what a team *awarded* its opponents rather than what it received, which is what you need to spot harsh or generous raters.\n\nBoth spirit arrays name the **opponent**, never the team itself: `spiritgiven[].givento` and `spiritreceived[].givenby` both hold the other team's name. Direction comes from which array a record is in, not from its fields.\n\nThe spirit blocks are only present when the event has spirit scoring both enabled and public (`season.spirit` is `1`). Comments are blanked to `null` unless the event also enables spirit comments.\n\n**This response exposes `seed.sotg_token`**, the token tied to the team's spirit submission. It is removed in 1.9.17, but is public on every deployment running 1.9.16 or older.\n\nDynamic entity: `teams` with `id={teamId}`. Server-side cache lifetime 120 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "One team's roster, record and spirit detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_games.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getGames",
+        "tags": [
+          "games"
+        ],
+        "summary": "Every game in the event, with scores but no detail",
+        "description": "The full schedule and every result in one file. This is the largest of the routine endpoints - expect a few hundred kilobytes at a full international event.\n\n**Falsy fields are stripped.** Every value that is `null`, `0`, `\"0\"` or `false` is removed before the response is sent, so an absent field here is ambiguous between \"unset\" and \"zero\". Empty strings survive, which is why `liveurl` sometimes appears as `\"\"`. The one exception is that `homescore` and `visitorscore` are put back for any game that is not `scheduled`, so a genuine 0-0 in progress is still reported.\n\nBecause of that stripping, the absence of `isongoing` is how you tell a game is not live; `status` is the field to read instead.\n\n`visitorsotg` is present here - the opponent's spirit score for the game - while `homesotg` is stripped. Do not read anything into the asymmetry; the field is not deliberately published.\n\nDynamic entity: `games`. Cache lifetime varies from 1.5 minutes during the event to 60 minutes more than 72 hours either side of it.\n",
+        "responses": {
+          "200": {
+            "description": "Every game in the season",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GamesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_games_active.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getActiveGames",
+        "tags": [
+          "games"
+        ],
+        "summary": "Games in or near the current round",
+        "description": "The same shape as the games list, filtered to a window around the current tournament-local time, plus anything flagged as ongoing regardless of its scheduled time.\n\nThe window is derived from the longest timeslot in the event: it opens 1.25 timeslots before now and closes 0.25 timeslots after, so a 90-minute slot gives roughly a two-hour lookback and a 22-minute lookahead. It is not a fixed number of hours.\n\nGames here carry two extra fields the full list does not: `from_active` and `lastevent`. `lastevent` is the most recent goal or game event, whichever is later, and is replaced by a synthetic `halftime` marker when halftime is the most recent thing to have happened.\n\n**Returns an empty `games` array outside event hours**, which is normal rather than an error.\n\nDynamic entity: `games` with `id=active`. Cache lifetime is 10 seconds while any game is ongoing and 30 seconds otherwise.\n",
+        "responses": {
+          "200": {
+            "description": "Games in the current window, possibly empty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveGamesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_games_{gameId}.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        },
+        {
+          "$ref": "#/components/parameters/GameId"
+        }
+      ],
+      "get": {
+        "operationId": "getGame",
+        "tags": [
+          "games"
+        ],
+        "summary": "One game - rosters, every goal, events and the spirit breakdown",
+        "description": "The most detailed endpoint in the API and the only place individual goals appear. `goals[]` gives a full scoring narrative: who scored, who assisted, the running score, and the time in seconds from the start of the game.\n\nUnlike the games list, **nothing is stripped here**. Zeroes and nulls are sent as they are, and the response carries fields the list deliberately removes: `game_result.official`, `game_result.homesotg` and `game_result.respteam` among them.\n\nData is repeated at several levels. `game_result` and `game_info` overlap heavily and disagree in places - `game_info` resolves ids to names and adds pool rules, `game_result` is closer to the raw row. Prefer `game_info` for display and `game_result` for `status`.\n\n`spiritstats.hometeam` and `spiritstats.visitorteam` are the scores **for** that team, i.e. awarded to them by their opponent, which is the opposite of the reading the field names suggest. The response says as much in a `note` field.\n\nCache lifetime depends on age: 30 seconds while ongoing, 90 seconds by default, then 5 minutes, 30 minutes, 30 days and a year as the game recedes past 3, 14 and 30 days.\n\nDynamic entity: `games` with `id={gameId}`.\n",
+        "responses": {
+          "200": {
+            "description": "One game in full",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_standings_{poolId}.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        },
+        {
+          "$ref": "#/components/parameters/PoolId"
+        }
+      ],
+      "get": {
+        "operationId": "getStandings",
+        "tags": [
+          "standings"
+        ],
+        "summary": "One pool's table or bracket, as pre-rendered HTML, plus its fixtures",
+        "description": "The odd one out. Rather than a structured table this endpoint returns UltiOrganizer's own rendering of the pool as an **HTML string** in `standings.html`, alongside the pool's settings and a structured `standings.games` list.\n\nThe HTML has team, pool and game links replaced by placeholder tokens: `{TEAM:123}`, `{POOL:64}` and `{GAME:377}`. A client is expected to substitute its own links. Beyond that the markup is UltiOrganizer's, complete with inline styles and `<table>` layout, and its structure differs by pool type.\n\n`standings.html` is empty for a pool that contains exactly one round-robin game, and for Swiss-draw pools the placeholder substitution is not applied.\n\nIf you want structured standings, build them from `standings.games` or from the teams endpoint rather than parsing this HTML.\n\nNote that `standings.type` can be `-1`, a value that never appears in the reference endpoint. It is synthesised for the single-game case described above.\n\nDynamic entity: `standings` with `id={poolId}`, which requires an id and returns HTTP 400 without one. Server-side cache lifetime 120 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "One pool's settings, fixtures and rendered table",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_spirit_{seriesId}.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        },
+        {
+          "$ref": "#/components/parameters/SeriesId"
+        }
+      ],
+      "get": {
+        "operationId": "getSpirit",
+        "tags": [
+          "spirit"
+        ],
+        "summary": "One division's spirit leaderboard",
+        "description": "Every team in a division with its **mean** score in each of the five Spirit of the Game categories and its mean total, ordered by total descending.\n\nThese are averages per game, not sums, which is what makes them comparable between teams that have played different numbers of games. Category means are typically fractional; `total` is the mean of the per-game totals, out of 20.\n\nThis is the aggregated view. For the underlying per-game scores use the team-detail endpoint, which also distinguishes what a team gave from what it received.\n\n**Returns an empty object** - no `spirit` key at all - when the event does not publish spirit points. Check `season.spirit` in the reference response before fetching.\n\nDynamic entity: `spirit` with `id={seriesId}`. Server-side cache lifetime 120 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "The division's spirit leaderboard, or an empty object if spirit is not published",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpiritResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_players.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getPlayers",
+        "tags": [
+          "players"
+        ],
+        "summary": "Every player id in the event",
+        "description": "A bare index of player ids and nothing else - each entry has a single `player_id` field. There is no per-player endpoint on this line, so this file is only useful as a count or a completeness check.\n\nFor names and statistics use the team-detail endpoint, whose `players[]` carries the full roster with totals already aggregated, or the statistics endpoint for a division-wide leaderboard.\n\n`season.player_count` in the reference response is the length of this list, so you rarely need to fetch it just to count.\n\n**There is no `{seasonId}_players_{playerId}.json`.** The router has no route that takes a player id, and probing one returns 404. Beware that the dynamic endpoint accepts `entity=players&id=N` without complaint: the id is ignored when building the response but is still used to name the cache file, so requesting it writes a `{seasonId}_players_{N}.json` containing the **entire** player list, not one player. Do not read such a file as a single-player record.\n\nDynamic entity: `players`. Server-side cache lifetime 600 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "Every player id in the season",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_statistics_{seriesId}.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        },
+        {
+          "$ref": "#/components/parameters/SeriesId"
+        }
+      ],
+      "get": {
+        "operationId": "getStatistics",
+        "tags": [
+          "players"
+        ],
+        "summary": "One division's player leaderboard",
+        "description": "Every player in a division with goals, assists, callahans and their per-game averages, ordered by `totalavg` descending.\n\nThe same per-player numbers appear in the team-detail endpoint, but scoped to one team. Use this when you want a division-wide ranking without fetching every team.\n\nThe series id is required in practice. Omitting it is not rejected - it resolves to series `0`, which matches nothing - so `{seasonId}_statistics.json` exists on some deployments and always returns an empty `statistics` array. It is a by-product, not a whole-event leaderboard; use `{seasonId}_statistics_top.json` for that.\n\nDynamic entity: `statistics` with `id={seriesId}`. Server-side cache lifetime 120 seconds.\n",
+        "responses": {
+          "200": {
+            "description": "The division's player leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_config.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getConfig",
+        "tags": [
+          "config"
+        ],
+        "summary": "The deployment's full configuration, plus where each setting came from",
+        "description": "A superset of the heartbeat's `config` block. Everything there appears here with the same value, and this endpoint adds the three keys the heartbeat strips - `LIVE_ALLOWED_ENTITIES`, `IS_DEV` and `BEACH_ULTIMATE_SHOWCASE_AFTER_TOURNAMENT` - along with a `sourceInfo` map and a `meta` block.\n\n`LIVE_ALLOWED_ENTITIES` is the useful one: it lists every entity the dynamic API will serve and its server-side cache lifetime in seconds, which is where the cache figures quoted throughout this document come from. Reading it is more reliable than trusting them, since a deployment can override the defaults.\n\n`sourceInfo` says whether each setting is a built-in default, set through the admin interface, set in PHP, or forced. Useful for telling a deliberately configured value from one nobody has touched.\n\n**Prefer the heartbeat for ordinary use.** This file is bigger, is not what the front end reads for configuration, and carries nothing extra that a results client needs. It was returned by every 1.9.x deployment checked, but it is a by-product of the cache rather than a designed public endpoint, so treat it as best-effort.\n\nDynamic entity: `config`. Note that the related `config_static` entity is not a data endpoint - it issues a redirect to `_heartbeat.json`.\n",
+        "responses": {
+          "200": {
+            "description": "The deployment's full configuration and the provenance of each setting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{seasonId}_statistics_top.json": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SeasonId"
+        }
+      ],
+      "get": {
+        "operationId": "getTopStatistics",
+        "tags": [
+          "players"
+        ],
+        "summary": "Event-wide single-game records - best hauls, callahans and scoring pairs",
+        "description": "Standout **single-game** performances across the whole event, not season totals. Each `topOverall` row is one player in one game, so the same player appears once per game they feature in.\n\nThree lists are returned. `topOverall` ranks goals plus assists in a game, `topCallahans` counts callahans in a game, and `topPairs` counts how often two players connected for a goal across the event, in either direction.\n\n`topOverall` is not a fixed length. It is cut at the total held by the hundredth row, then widened to include ties if that would drop it below 75 rows, so expect anywhere from about 75 to a few hundred entries.\n\n**Two quirks worth handling before you parse this.** The `statistics` object carries a stray `\"0\": 0` member alongside the three lists, an artefact of how the response is assembled. And `topPairs` rows use raw SQL expressions as property names, ``greatest(g.`scorer`, g.`assist`)`` and ``least(g.`scorer`, g.`assist`)``, which hold the two player ids. Both are stable across deployments on this line, but neither is a name you would want to depend on.\n\nThe front end only requests this entity when `config.SHOW_TOP_STATS` is set, so on a deployment with it disabled the static file may never be generated. Expect a 404 rather than an empty response.\n\nDynamic entity: `statistics` with `id=top`. Cache lifetime 3 minutes.\n",
+        "responses": {
+          "200": {
+            "description": "Event-wide single-game records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopStatisticsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "SeasonId": {
+        "name": "seasonId",
+        "in": "path",
+        "required": true,
+        "description": "`config.LIVE_SEASON_ID` from the heartbeat, used verbatim. Casing varies by deployment.",
+        "schema": {
+          "type": "string"
+        },
+        "examples": {
+          "lowercase": {
+            "value": "wbuc2025"
+          },
+          "uppercase": {
+            "value": "26EYUCVIE"
+          }
+        }
+      },
+      "TeamId": {
+        "name": "teamId",
+        "in": "path",
+        "required": true,
+        "description": "`team_id` from the reference or teams endpoint.",
+        "schema": {
+          "type": "integer"
+        },
+        "example": 68
+      },
+      "GameId": {
+        "name": "gameId",
+        "in": "path",
+        "required": true,
+        "description": "`game_id` from the games endpoint. Overlaps the pool, series and team id ranges, so it is only a game id in this position.",
+        "schema": {
+          "type": "integer"
+        },
+        "example": 2
+      },
+      "PoolId": {
+        "name": "poolId",
+        "in": "path",
+        "required": true,
+        "description": "`pool_id` from `pools[]` in the reference endpoint.",
+        "schema": {
+          "type": "integer"
+        },
+        "example": 18
+      },
+      "SeriesId": {
+        "name": "seriesId",
+        "in": "path",
+        "required": true,
+        "description": "`series_id` from `series[]` in the reference endpoint. A division, not a pool.",
+        "schema": {
+          "type": "integer"
+        },
+        "example": 9
+      }
+    },
+    "responses": {},
+    "schemas": {
+      "IntBool": {
+        "type": "integer",
+        "title": "IntBool",
+        "enum": [
+          0,
+          1
+        ],
+        "description": "Boolean carried as an integer.",
+        "x-boolean-int": true
+      },
+      "Meta": {
+        "type": "object",
+        "title": "Meta",
+        "description": "Cache envelope attached to every response except the heartbeat. Added automatically to any response that does not build one, which is why it appears even on the spirit and statistics endpoints that otherwise return a bare collection.",
+        "required": [
+          "cache_lifetime",
+          "expires",
+          "expires_timestamp",
+          "generated",
+          "generated_timestamp",
+          "cache_version",
+          "app_version"
+        ],
+        "properties": {
+          "cache_lifetime": {
+            "type": "integer",
+            "description": "Seconds this document stays fresh, i.e. `expires_timestamp - generated_timestamp`.",
+            "examples": [
+              300
+            ]
+          },
+          "expires": {
+            "type": "string",
+            "description": "When this document goes stale, in tournament-local time.",
+            "examples": [
+              "2026-08-27 07:31:30"
+            ]
+          },
+          "expires_timestamp": {
+            "type": "integer",
+            "description": "When this document goes stale, in unix seconds.",
+            "examples": [
+              1787815890
+            ]
+          },
+          "generated": {
+            "type": "string",
+            "description": "When this document was built, in tournament-local time.",
+            "examples": [
+              "2026-08-27 07:26:30"
+            ]
+          },
+          "generated_timestamp": {
+            "type": "integer",
+            "description": "When this document was built, in unix seconds.",
+            "examples": [
+              1787815590
+            ]
+          },
+          "cache_version": {
+            "type": "string",
+            "description": "Matches the heartbeat's `cache_version`, so it can be used to tell whether a cached copy is from the current rebuild.",
+            "examples": [
+              "20251126.105434"
+            ]
+          },
+          "app_version": {
+            "type": "string",
+            "description": "Live! version that produced this document.",
+            "examples": [
+              "1.9.14"
+            ]
+          }
+        }
+      },
+      "Heartbeat": {
+        "type": "object",
+        "title": "Heartbeat",
+        "description": "Meta information about a deployment. Which Live! version it runs, how fresh its data is, and the season id and base path every other endpoint is built from.",
+        "required": [
+          "app_version",
+          "cache_version",
+          "last_updated_utc",
+          "config"
+        ],
+        "properties": {
+          "app_version": {
+            "type": "string",
+            "description": "Live! version serving this deployment. **Not reliably semver** - `dev` and build stamps such as `20250612.082841` are also seen in the wild, so always parse it with a fallback.\n",
+            "examples": [
+              "1.9.14"
+            ]
+          },
+          "cache_version": {
+            "type": "string",
+            "description": "Bumped whenever the upstream data is rebuilt. Useful as a client-side cache key.",
+            "examples": [
+              "20251126.105434"
+            ]
+          },
+          "last_updated_utc": {
+            "type": "string",
+            "description": "When the upstream data was last rebuilt, in UTC.",
+            "examples": [
+              "2025-11-26 10:54:34"
+            ]
+          },
+          "config": {
+            "$ref": "#/components/schemas/HeartbeatConfig"
+          }
+        }
+      },
+      "HeartbeatConfig": {
+        "type": "object",
+        "title": "HeartbeatConfig",
+        "description": "Deployment configuration, listed below in wire order. All 32 keys were present on every 1.9.x deployment checked. Keys not listed here are still accepted rather than rejected, in case a later release adds one.\n\nThree things to watch:\n- Booleans here are real JSON booleans, not the `0` / `1` integers used everywhere else in this API.\n- Some numeric settings are sent as strings (`\"120\"`, `\"1\"`).\n- `TOURNAMENT_INFO_URL` may be `null`, unlike most of this API where an unset field is simply absent.\n\nThree further keys exist in the deployment's own configuration but are stripped before this block is written: `LIVE_ALLOWED_ENTITIES`, `BEACH_ULTIMATE_SHOWCASE_AFTER_TOURNAMENT` and `IS_DEV`.\n",
+        "required": [
+          "LIVE_SEASON_ID",
+          "STATIC_CACHE_BASE_URL"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "LIVE_SEASON_ID": {
+            "type": "string",
+            "description": "Filename prefix for every other endpoint. Use verbatim; casing varies by deployment.",
+            "examples": [
+              "wbuc2025",
+              "26EYUCVIE"
+            ]
+          },
+          "GA4_ID": {
+            "type": "string",
+            "description": "Google Analytics 4 measurement id.",
+            "examples": [
+              "G-PVN31Q7VV1"
+            ]
+          },
+          "TOURNAMENT_NAME": {
+            "type": "string",
+            "description": "May be an empty string even on a live event. Prefer `season.name` from the reference endpoint.",
+            "examples": [
+              "WFDF WBUC 2025"
+            ]
+          },
+          "TOURNAMENT_LOCATION": {
+            "type": "string",
+            "examples": [
+              "Portimão, Portugal",
+              "Gdańsk, Poland"
+            ]
+          },
+          "APP_TITLE": {
+            "type": "string",
+            "description": "Suffix appended to the browser tab title.",
+            "examples": [
+              " - Live! by BULA"
+            ]
+          },
+          "HOME_LOGO_PATH": {
+            "type": "string",
+            "description": "Tournament logo. Either root-relative or an absolute URL.",
+            "examples": [
+              "/live/conf/logos/wbuc-2025.png"
+            ]
+          },
+          "SOCIAL_SHARE_LOGO_PATH": {
+            "type": "string",
+            "description": "Image used for link previews.",
+            "examples": [
+              "/live/conf/logos/wbuc-2025.png"
+            ]
+          },
+          "FAVICON_PATH": {
+            "type": "string",
+            "examples": [
+              "/live/conf/logos/wbuc-favicon.png"
+            ]
+          },
+          "FIELD_NAMES": {
+            "description": "Display names for the playing fields, keyed by field id as a string. Serialises as `[]` rather than `{}` when unset, so check the type before indexing.\n",
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "shortName": {
+                      "type": "string",
+                      "examples": [
+                        "Arena"
+                      ]
+                    },
+                    "longName": {
+                      "type": "string",
+                      "examples": [
+                        "BULA Arena"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "type": "array",
+                "maxItems": 0,
+                "items": true
+              }
+            ],
+            "examples": [
+              {
+                "1": {
+                  "shortName": "Arena",
+                  "longName": "BULA Arena"
+                }
+              },
+              []
+            ]
+          },
+          "THEME_COLORS": {
+            "type": "object",
+            "description": "Theme colours as CSS hex strings.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "examples": [
+              {
+                "LIVE_DARK_BG": "#093254",
+                "LIVE_LIGHT_TEXT": "#FEC745"
+              }
+            ]
+          },
+          "SHOW_SPIRIT_COMMENTS": {
+            "type": "boolean",
+            "description": "When false, spirit comments are blanked to `null` in every response that would carry them."
+          },
+          "TEAM_PHOTOS_ENABLED": {
+            "type": "boolean",
+            "description": "When false, every `photos` array in the API is empty."
+          },
+          "SHOW_TOP_STATS": {
+            "type": "boolean",
+            "description": "Whether the event-wide records endpoint is published."
+          },
+          "STATS_PAGE_ENABLED": {
+            "type": "boolean"
+          },
+          "TOURNAMENT_INFO_URL": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Link to the tournament's own site. Explicitly `null` on some deployments.",
+            "examples": [
+              "https://wbuc.sport"
+            ]
+          },
+          "CONTACT_EMAILS": {
+            "type": "string",
+            "description": "Comma-separated. May be empty.",
+            "examples": [
+              "eyuc.toc@ultimatefederation.eu"
+            ]
+          },
+          "TV_SCREEN_LINKS": {
+            "type": "array",
+            "description": "URLs cycled through on TV screen views.",
+            "items": {
+              "type": "string"
+            },
+            "examples": [
+              [
+                "https://wbuc.wfdf.sport"
+              ]
+            ]
+          },
+          "TV_SCREEN_LOGO_PATH": {
+            "type": "string",
+            "examples": [
+              "/live/conf/logos/tv-screen-logo-336x102.png"
+            ]
+          },
+          "ENABLE_VOTING": {
+            "type": "boolean"
+          },
+          "SHOW_SCOREBOARD_VOTE": {
+            "type": "boolean"
+          },
+          "VOTE_URL": {
+            "type": "string",
+            "examples": [
+              "/?view=live/vote"
+            ]
+          },
+          "MAINTENANCE_PAGE_PATH": {
+            "type": "string",
+            "description": "When non-empty, the front end shows a maintenance page instead of results."
+          },
+          "DEFAULT_TO_LIVE": {
+            "type": "boolean"
+          },
+          "ENABLE_SERVER_CACHING": {
+            "type": "boolean",
+            "description": "When false, the static files may lag behind the dynamic endpoint."
+          },
+          "ENABLE_CLIENT_CACHING": {
+            "type": "boolean"
+          },
+          "TIMING_HEARTBEAT_CHECK_INTERVAL_SECONDS": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "How often the front end re-reads this document, in seconds.",
+            "examples": [
+              "120"
+            ]
+          },
+          "CACHE_MINUTES_MODULATOR": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiplier applied to every server-side cache lifetime quoted in this document.",
+            "examples": [
+              "1"
+            ]
+          },
+          "UO_URL_PREFIX": {
+            "type": "string",
+            "description": "Path prefix of the UltiOrganizer install this Live! instance sits in.",
+            "examples": [
+              "/"
+            ]
+          },
+          "FLAG_FILES_BASE_URL": {
+            "type": "string",
+            "description": "Prefix for `country.flagfile`.",
+            "examples": [
+              "/images/flags/small/"
+            ]
+          },
+          "BASE_API_URL": {
+            "type": "string",
+            "description": "The dynamic PHP endpoint. Returns the same bodies as the static files but sends no CORS headers, so it is unusable cross-origin and is not specified here.",
+            "examples": [
+              "/index.php?view=live/api"
+            ]
+          },
+          "STATIC_CACHE_BASE_URL": {
+            "type": "string",
+            "description": "Root-relative path to the static files. Join it to the origin, not to the full request URL, and resolve against the final response URL after any redirect.",
+            "examples": [
+              "/live/data/"
+            ]
+          },
+          "HEARTBEAT_FILE": {
+            "type": "string",
+            "examples": [
+              "_heartbeat.json"
+            ]
+          }
+        }
+      },
+      "ReferenceResponse": {
+        "type": "object",
+        "title": "ReferenceResponse",
+        "description": "Response body of the reference endpoint. Five flat collections plus the event itself.",
+        "required": [
+          "season",
+          "series",
+          "pools",
+          "teams",
+          "countries",
+          "reservations",
+          "meta"
+        ],
+        "properties": {
+          "season": {
+            "$ref": "#/components/schemas/Season"
+          },
+          "series": {
+            "type": "array",
+            "description": "The event's divisions.",
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            }
+          },
+          "pools": {
+            "type": "array",
+            "description": "Pools and brackets across every division.",
+            "items": {
+              "$ref": "#/components/schemas/Pool"
+            }
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReferenceTeam"
+            }
+          },
+          "countries": {
+            "type": "array",
+            "description": "Every country referenced by a team, plus its flag file.",
+            "items": {
+              "$ref": "#/components/schemas/Country"
+            }
+          },
+          "reservations": {
+            "type": "array",
+            "description": "Playing fields, grouped by day.",
+            "items": {
+              "$ref": "#/components/schemas/Reservation"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "Season": {
+        "type": "object",
+        "title": "Season",
+        "description": "The event itself. Most fields come straight from UltiOrganizer's season row, so which of the optional ones appear depends on the UltiOrganizer version underneath rather than on the Live! version. The required list below was present on every deployment checked.\n\nSeven fields are deliberately withheld: `enrollopen`, `enroll_deadline`, `istournament`, `organizer`, `category`, `showspiritpoints` and `spiritpoints`. The last two are folded into the derived `spirit` field instead.\n",
+        "required": [
+          "season_id",
+          "name",
+          "starttime",
+          "endtime",
+          "timezone",
+          "utcOffset",
+          "status",
+          "type"
+        ],
+        "properties": {
+          "season_id": {
+            "type": "string",
+            "description": "Same value as `config.LIVE_SEASON_ID`.",
+            "examples": [
+              "wbuc2025"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Full event name. More reliable than `config.TOURNAMENT_NAME`, which is often empty.",
+            "examples": [
+              "WBUC 2025"
+            ]
+          },
+          "starttime": {
+            "type": "string",
+            "description": "First day of the event, at midnight local time.",
+            "examples": [
+              "2025-11-16 00:00:00"
+            ]
+          },
+          "endtime": {
+            "type": "string",
+            "description": "Last day of the event, at midnight local time. Note this is the start of the final day, not its end.",
+            "examples": [
+              "2025-11-22 00:00:00"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA zone every local timestamp in the API is expressed in.",
+            "examples": [
+              "Europe/Lisbon"
+            ]
+          },
+          "utcOffset": {
+            "type": "string",
+            "description": "Offset in effect during the event. Derived rather than stored, and fixed for the whole event, so it will be wrong for an event that straddles a daylight-saving change.",
+            "examples": [
+              "+01:00",
+              "-04:00"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Derived by comparing the current tournament-local date against `starttime` and `endtime`, so it is a date-level comparison and flips at local midnight.\n",
+            "enum": [
+              "scheduled",
+              "ongoing",
+              "completed"
+            ],
+            "examples": [
+              "completed"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Playing surface and format.",
+            "examples": [
+              "beach",
+              "outdoor",
+              "indoor"
+            ]
+          },
+          "player_count": {
+            "type": "integer",
+            "description": "Total players across every roster, and the length of the players endpoint's list.",
+            "examples": [
+              2277
+            ]
+          },
+          "timeslots": {
+            "type": "array",
+            "description": "Distinct slot lengths used by this event's pools, in minutes, with duplicates and blanks removed. The largest of these sets the active-games window.",
+            "items": {
+              "type": "integer"
+            },
+            "examples": [
+              [
+                60
+              ],
+              [
+                100,
+                110
+              ]
+            ]
+          },
+          "gameTimesByDay": {
+            "type": "object",
+            "description": "First and last start time per day, keyed by `YYYY-MM-DD`, with `end` being one round after the last start. Unscheduled games are excluded.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "first": {
+                  "type": "string",
+                  "description": "Earliest start time that day, `HH:MM`.",
+                  "examples": [
+                    "08:15"
+                  ]
+                },
+                "last": {
+                  "type": "string",
+                  "description": "Latest start time that day, `HH:MM`.",
+                  "examples": [
+                    "15:45"
+                  ]
+                },
+                "end": {
+                  "type": "string",
+                  "description": "One hour after `last`. The round length used here is fixed at 60 minutes and does not follow `timeslots`.",
+                  "examples": [
+                    "16:45"
+                  ]
+                }
+              }
+            }
+          },
+          "spirit": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Derived - `1` only when the event both records spirit points and publishes them. When `0`, the spirit endpoint returns an empty object and team detail omits its spirit blocks."
+          },
+          "showspiritcomments": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "When `0`, every `comments` field in the API is `null`."
+          },
+          "reg_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The event's id in the organiser's registration system. Often `0`, and explicitly `null` on some deployments.",
+            "examples": [
+              0
+            ]
+          },
+          "iscurrent": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "isinternational": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether teams represent countries. When `1`, `country` and `flagfile` are meaningful."
+          },
+          "isnationalteams": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "api_public": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "event_readonly": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "hide_time_on_scoresheet": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "hometeammode": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "lockteamspiritonsubmit": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "maintenance_mode": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "public_event": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "showgamecomments": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "showspiritcommentstoteams": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "showspiritpointsonlyoncomplete": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "use_season_points": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "spiritmode": {
+            "type": "integer",
+            "description": "Which spirit scoring scheme is in use. An id, not a count.",
+            "examples": [
+              1003
+            ]
+          }
+        }
+      },
+      "Series": {
+        "type": "object",
+        "title": "Series",
+        "description": "A division. Called `series` throughout the API, and referred to as `series_id` or bare `series` depending on which object you are looking at.",
+        "required": [
+          "series_id",
+          "name",
+          "ordering"
+        ],
+        "properties": {
+          "series_id": {
+            "type": "integer",
+            "examples": [
+              9
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Mixed",
+              "Open",
+              "Women's",
+              "Grand Master Open"
+            ]
+          },
+          "ordering": {
+            "type": "string",
+            "description": "Sort key for display. A letter, not a number, and note that division order is not the same as `series_id` order.",
+            "examples": [
+              "A",
+              "B"
+            ]
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short URL-friendly name for the division, added only for series listed in the deployment's own `LIVE_SERIES_SLUGS` map. That map is empty by default, so most deployments omit this field entirely, and one that sets it will carry `slug` on some series and not others.\n\nAbsent on all three in-range deployments checked (1.9.14, 1.9.15, 1.9.16) and seen only on installs reporting a non-semver `app_version`. Treat it as optional and never key off it.\n",
+            "examples": [
+              "GGM"
+            ]
+          }
+        }
+      },
+      "Pool": {
+        "type": "object",
+        "title": "Pool",
+        "description": "A pool or bracket within a division. Use `pool_id` with the standings endpoint.",
+        "required": [
+          "pool_id",
+          "poolname",
+          "series_id",
+          "ordering",
+          "type"
+        ],
+        "properties": {
+          "pool_id": {
+            "type": "integer",
+            "examples": [
+              18
+            ]
+          },
+          "poolname": {
+            "type": "string",
+            "description": "Named `poolname` here but `name` on the standings and game endpoints.",
+            "examples": [
+              "Pool A",
+              "Gold",
+              "Placement (5-7)"
+            ]
+          },
+          "series_id": {
+            "type": "integer",
+            "description": "The division this belongs to.",
+            "examples": [
+              1
+            ]
+          },
+          "ordering": {
+            "type": "string",
+            "description": "Sort key within the division. A letter, usually matching the pool name.",
+            "examples": [
+              "A"
+            ]
+          },
+          "type": {
+            "type": "integer",
+            "description": "How the pool is played, which also determines how the standings endpoint renders it.\n- `1` round robin\n- `2` playoff bracket\n- `3` Swiss draw\n- `4` cross matches\n\nValues `1`, `2` and `4` were seen at the event sampled. The standings endpoint may report `-1` for a round-robin pool holding a single game, but that value never appears here.\n",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "examples": [
+              1,
+              2,
+              4
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Display colour as an RGB hex string with no leading `#`. Sent as a number when the value happens to be all digits.",
+            "examples": [
+              "00FFFF",
+              "0000FF"
+            ]
+          },
+          "timeslot": {
+            "type": "integer",
+            "description": "Slot length used for this pool's games, in minutes.",
+            "examples": [
+              60
+            ]
+          },
+          "visible": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "played": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether the pool has finished. Feeds the calculation of `final_standing_calculated`."
+          },
+          "placementpool": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether this pool decides final placings rather than feeding another pool."
+          },
+          "continuingpool": {
+            "$ref": "#/components/schemas/IntBool"
+          }
+        }
+      },
+      "ReferenceTeam": {
+        "type": "object",
+        "title": "ReferenceTeam",
+        "description": "A team's identity. For records and results use the teams endpoint instead.",
+        "required": [
+          "team_id",
+          "name",
+          "series",
+          "country"
+        ],
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              68
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "abbreviation": {
+            "type": "string",
+            "description": "Left as a string even when it is all digits.",
+            "examples": [
+              "AUS"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "description": "Division id. Called `series` here but `series_id` on `Pool`.",
+            "examples": [
+              8
+            ]
+          },
+          "country": {
+            "type": "integer",
+            "description": "Joins to `countries[].country_id`.",
+            "examples": [
+              1011
+            ]
+          },
+          "rank": {
+            "type": "integer",
+            "description": "Seed going into the event. Called `seed` on the teams endpoint.",
+            "examples": [
+              7
+            ]
+          },
+          "reg_id": {
+            "type": "integer",
+            "description": "The team's id in the organiser's registration system. Present here on 1.9.14, unlike on the teams endpoint.",
+            "examples": [
+              10
+            ]
+          },
+          "final_standing": {
+            "type": "integer",
+            "description": "Organiser-confirmed finishing position, used to override the calculated one for disqualifications, forfeits and similar. `0` here for every team on this line, even after an event has finished, so read it from the teams endpoint instead.",
+            "examples": [
+              0
+            ]
+          },
+          "final_standing_calculated": {
+            "type": "integer",
+            "description": "Finishing position derived from results, and the field to prefer. `0` until the pools that decide it are played.",
+            "examples": [
+              2
+            ]
+          },
+          "activerank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Live seeding. Null in every row checked at this event, so treat it as unused here. Note the team-detail endpoint's `seed.activerank` is populated."
+          },
+          "club": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Owning club. Null in every row checked at a national-teams event; expect a value at a club event."
+          }
+        }
+      },
+      "Country": {
+        "type": "object",
+        "title": "Country",
+        "description": "A country referenced by at least one team. Not a full country list, only those entered.",
+        "required": [
+          "country_id",
+          "name",
+          "abbreviation",
+          "flagfile"
+        ],
+        "properties": {
+          "country_id": {
+            "type": "integer",
+            "description": "From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.",
+            "examples": [
+              1011
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "abbreviation": {
+            "type": "string",
+            "description": "Three-letter code.",
+            "examples": [
+              "AUS"
+            ]
+          },
+          "flagfile": {
+            "type": "string",
+            "description": "Filename only. Prefix with `config.FLAG_FILES_BASE_URL` to build the URL.",
+            "examples": [
+              "Australia.png"
+            ]
+          }
+        }
+      },
+      "Reservation": {
+        "type": "object",
+        "title": "Reservation",
+        "description": "A playing field on a given day. Games reference these by `reservation` id.",
+        "required": [
+          "id",
+          "fieldname",
+          "reservationgroup"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Joins to `games[].reservation`.",
+            "examples": [
+              1
+            ]
+          },
+          "fieldname": {
+            "type": "string",
+            "description": "Field label as shown on the schedule. Usually a number, but always sent as a string. Map it through `config.FIELD_NAMES` for a display name.",
+            "examples": [
+              "1",
+              "13"
+            ]
+          },
+          "reservationgroup": {
+            "type": "string",
+            "description": "The day this field is booked for.",
+            "examples": [
+              "Sunday",
+              "Thursday"
+            ]
+          },
+          "location": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Venue id, or `0` where the event uses a single unnamed site.",
+            "examples": [
+              0
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Venue name, `null` when the event has only one site.",
+            "examples": [
+              "Riverside"
+            ]
+          }
+        }
+      },
+      "TeamsResponse": {
+        "type": "object",
+        "title": "TeamsResponse",
+        "description": "Response body of the teams endpoint.",
+        "required": [
+          "teams",
+          "meta"
+        ],
+        "properties": {
+          "teams": {
+            "type": "object",
+            "description": "Keyed by team id as a string. The key always matches the row's `team_id`.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TeamStats"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "TeamStats": {
+        "type": "object",
+        "title": "TeamStats",
+        "description": "A team's aggregate record across the event. Identity fields duplicate `ReferenceTeam`; the rest are results.\n\nEvery field here is assembled explicitly rather than passed through from the database, so the set is fixed: all seventeen properties below appeared on all 136 teams at the event sampled, and nothing else did.\n",
+        "required": [
+          "team_id",
+          "name",
+          "series",
+          "country",
+          "seed",
+          "games",
+          "wins",
+          "losses",
+          "winavg",
+          "for",
+          "against",
+          "diff",
+          "final_standing",
+          "final_standing_calculated",
+          "photos"
+        ],
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              68
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "description": "Division id.",
+            "examples": [
+              8
+            ]
+          },
+          "country": {
+            "type": "integer",
+            "description": "Joins to `countries[].country_id` in the reference response.",
+            "examples": [
+              1011
+            ]
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed going into the event. Same value as `ReferenceTeam.rank`.",
+            "examples": [
+              7
+            ]
+          },
+          "games": {
+            "type": "integer",
+            "description": "Games played.",
+            "examples": [
+              13
+            ]
+          },
+          "wins": {
+            "type": "integer",
+            "examples": [
+              7
+            ]
+          },
+          "losses": {
+            "type": "integer",
+            "description": "Derived as `games - wins`, so a drawn game counts as a loss here.",
+            "examples": [
+              6
+            ]
+          },
+          "winavg": {
+            "type": "number",
+            "description": "Win percentage, `0` to `100`, not a fraction. Rounded to one decimal place.",
+            "examples": [
+              53.8
+            ]
+          },
+          "for": {
+            "type": "integer",
+            "description": "Goals scored across the event.",
+            "examples": [
+              133
+            ]
+          },
+          "against": {
+            "type": "integer",
+            "description": "Goals conceded.",
+            "examples": [
+              120
+            ]
+          },
+          "diff": {
+            "type": "integer",
+            "description": "`for` minus `against`. Negative when a team conceded more than it scored.",
+            "examples": [
+              13
+            ]
+          },
+          "final_standing": {
+            "type": "integer",
+            "description": "Finishing position. Populated here for every team, unlike in the reference response where it stays `0`.",
+            "examples": [
+              2
+            ]
+          },
+          "final_standing_calculated": {
+            "type": "integer",
+            "description": "Finishing position derived from results. Matched `final_standing` in every row checked; where the two differ, `final_standing` is the organiser's override.",
+            "examples": [
+              2
+            ]
+          },
+          "spirit": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Total spirit points received across the event. Present only when the event publishes spirit points, and the string `\"N/A\"` for a team marked invalid.",
+            "examples": [
+              138,
+              "N/A"
+            ]
+          },
+          "spiritavg": {
+            "type": [
+              "number",
+              "string"
+            ],
+            "description": "Spirit points per game, to two decimal places. The comparable figure, since teams play different numbers of games. `\"N/A\"` for a team marked invalid.",
+            "examples": [
+              10.62,
+              "N/A"
+            ]
+          },
+          "photos": {
+            "type": "array",
+            "description": "URLs of team photos, empty unless the deployment sets `config.TEAM_PHOTOS_ENABLED` and photos have been uploaded. Empty in every row checked.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TeamDetailResponse": {
+        "type": "object",
+        "title": "TeamDetailResponse",
+        "description": "One team in full. Unlike most responses this is flat rather than wrapped in a named collection.\n\nMuch of it is passed straight through from UltiOrganizer, so the exact optional-field set follows the UltiOrganizer version underneath. The spirit blocks are present only when `season.spirit` is `1`.\n",
+        "required": [
+          "team_id",
+          "name",
+          "series",
+          "players",
+          "meta"
+        ],
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              68
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "abbreviation": {
+            "type": "string",
+            "examples": [
+              "AUS"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Division type, lower-case.",
+            "examples": [
+              "mixed",
+              "open",
+              "women"
+            ]
+          },
+          "valid": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "When `0`, spirit figures on the teams endpoint are reported as `\"N/A\"`."
+          },
+          "season": {
+            "type": "string",
+            "description": "Season id, matching `config.LIVE_SEASON_ID`.",
+            "examples": [
+              "wbuc2025"
+            ]
+          },
+          "seasonname": {
+            "type": "string",
+            "examples": [
+              "WBUC 2025"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "examples": [
+              8
+            ]
+          },
+          "seriesname": {
+            "type": "string",
+            "examples": [
+              "Mixed"
+            ]
+          },
+          "pool": {
+            "type": "integer",
+            "description": "The team's current pool or bracket id, `0` when it is not in one.",
+            "examples": [
+              0,
+              20
+            ]
+          },
+          "poolname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null before a team has been drawn into a pool.",
+            "examples": [
+              "Bracket 1-4 Finals"
+            ]
+          },
+          "country": {
+            "type": "integer",
+            "examples": [
+              1011
+            ]
+          },
+          "countryname": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "flagfile": {
+            "type": "string",
+            "description": "Filename only. Prefix with `config.FLAG_FILES_BASE_URL`.",
+            "examples": [
+              "Australia.png"
+            ]
+          },
+          "club": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null at a national-teams event."
+          },
+          "clubname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null at a national-teams event."
+          },
+          "final_standing": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "final_standing_calculated": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "seed": {
+            "$ref": "#/components/schemas/TeamSeed"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TeamRecord"
+          },
+          "points": {
+            "$ref": "#/components/schemas/TeamPoints"
+          },
+          "players": {
+            "type": "array",
+            "description": "The full squad, with event totals already aggregated.",
+            "items": {
+              "$ref": "#/components/schemas/PlayerStats"
+            }
+          },
+          "spiritgiven": {
+            "type": "array",
+            "description": "Spirit scores this team **awarded** to its opponents, one per game. The only place in the API this direction is exposed.",
+            "items": {
+              "$ref": "#/components/schemas/TeamSpiritGame"
+            }
+          },
+          "spiritreceived": {
+            "type": "array",
+            "description": "Spirit scores this team **received** from its opponents, one per game.",
+            "items": {
+              "$ref": "#/components/schemas/TeamSpiritGame"
+            }
+          },
+          "spiritstats": {
+            "type": "object",
+            "description": "How many games contributed to the spirit figures. Can be lower than `stats.games` when an opponent has not submitted.",
+            "properties": {
+              "games": {
+                "type": "integer",
+                "examples": [
+                  13
+                ]
+              }
+            }
+          },
+          "spirittotal": {
+            "type": "object",
+            "description": "Total spirit points received across the event.",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "examples": [
+                  138
+                ]
+              }
+            }
+          },
+          "photos": {
+            "type": "array",
+            "description": "URLs of team photos. Empty in every response checked.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "TeamSeed": {
+        "type": "object",
+        "title": "TeamSeed",
+        "description": "The team's seeding and current placement. Largely repeats the parent object's identity fields, and carries three that appear nowhere else.",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              68
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "abbreviation": {
+            "type": "string",
+            "examples": [
+              "AUS"
+            ]
+          },
+          "rank": {
+            "type": "integer",
+            "description": "Seed going into the event.",
+            "examples": [
+              7
+            ]
+          },
+          "activerank": {
+            "type": "integer",
+            "description": "Current live ranking. Populated here, unlike `ReferenceTeam.activerank`.",
+            "examples": [
+              0
+            ]
+          },
+          "poolrank": {
+            "type": "integer",
+            "description": "Position within the current pool.",
+            "examples": [
+              0
+            ]
+          },
+          "pool": {
+            "type": "integer",
+            "examples": [
+              0
+            ]
+          },
+          "lastname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Misleadingly named - carries the pool or bracket name, not a person's surname.",
+            "examples": [
+              "Bracket 1-4 Finals"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "examples": [
+              8
+            ]
+          },
+          "country": {
+            "type": "integer",
+            "examples": [
+              1011
+            ]
+          },
+          "reg_id": {
+            "type": "integer",
+            "description": "The team's id in the organiser's registration system.",
+            "examples": [
+              10
+            ]
+          },
+          "valid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "club": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clubname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sotg_token": {
+            "type": "string",
+            "description": "Opaque token tied to this team's spirit submission. **Published in the public feed on this line** - it is removed in 1.9.17, so its presence is a reliable way to tell a pre-1.9.17 deployment from a later one.\n",
+            "examples": [
+              "b57cbc65fdea445fb349b9cc83f5f9c9"
+            ]
+          }
+        }
+      },
+      "TeamRecord": {
+        "type": "object",
+        "title": "TeamRecord",
+        "description": "Win/loss record. Only `games` and `wins` are sent by most deployments; `draws` and `losses` were seen on one, so derive losses as `games - wins` rather than relying on the field.",
+        "required": [
+          "games",
+          "wins"
+        ],
+        "properties": {
+          "games": {
+            "type": "integer",
+            "examples": [
+              13
+            ]
+          },
+          "wins": {
+            "type": "integer",
+            "examples": [
+              7
+            ]
+          },
+          "draws": {
+            "type": "integer",
+            "description": "Sent by some deployments only.",
+            "examples": [
+              0
+            ]
+          },
+          "losses": {
+            "type": "integer",
+            "description": "Sent by some deployments only.",
+            "examples": [
+              6
+            ]
+          }
+        }
+      },
+      "TeamPoints": {
+        "type": "object",
+        "title": "TeamPoints",
+        "description": "Goals for and against, plus the team's spirit total.",
+        "required": [
+          "team_id",
+          "scores",
+          "against"
+        ],
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              68
+            ]
+          },
+          "scores": {
+            "type": "integer",
+            "description": "Goals scored. Called `for` on `TeamStats`.",
+            "examples": [
+              133
+            ]
+          },
+          "against": {
+            "type": "integer",
+            "description": "Goals conceded.",
+            "examples": [
+              120
+            ]
+          },
+          "spirit": {
+            "type": "integer",
+            "description": "Total spirit points received. Present only when the event publishes spirit points.",
+            "examples": [
+              138
+            ]
+          },
+          "spiritavg": {
+            "type": "number",
+            "description": "Spirit points per game, to two decimal places.",
+            "examples": [
+              10.62
+            ]
+          }
+        }
+      },
+      "TeamSpiritGame": {
+        "type": "object",
+        "title": "TeamSpiritGame",
+        "description": "One game's spirit score, in the five WFDF Spirit of the Game categories. Each is scored 0-4 and `total` is their sum, so 20 is the maximum and 2 per category is the \"good\" baseline rather than a poor score.\n\nWhether this is a score given or received depends on which array it came from, not on its fields.\n",
+        "required": [
+          "game_id",
+          "cat1",
+          "cat2",
+          "cat3",
+          "cat4",
+          "cat5",
+          "total"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "description": "Joins to the games endpoints.",
+            "examples": [
+              23
+            ]
+          },
+          "cat1": {
+            "type": "integer",
+            "description": "Rules knowledge and use.",
+            "examples": [
+              2
+            ]
+          },
+          "cat2": {
+            "type": "integer",
+            "description": "Fouls and body contact.",
+            "examples": [
+              2
+            ]
+          },
+          "cat3": {
+            "type": "integer",
+            "description": "Fair-mindedness.",
+            "examples": [
+              2
+            ]
+          },
+          "cat4": {
+            "type": "integer",
+            "description": "Positive attitude and self-control.",
+            "examples": [
+              3
+            ]
+          },
+          "cat5": {
+            "type": "integer",
+            "description": "Communication.",
+            "examples": [
+              2
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "Sum of the five categories, out of 20.",
+            "examples": [
+              11
+            ]
+          },
+          "comments": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free text from the scoring team. Forced to `null` for every record unless the event enables spirit comments, so a null here does not mean none was written."
+          },
+          "givento": {
+            "type": "string",
+            "description": "Always present in `spiritgiven`, and names the **opponent**. Where it also appears in `spiritreceived` it repeats the same opponent name.",
+            "examples": [
+              "Lebanon"
+            ]
+          },
+          "givenby": {
+            "type": "string",
+            "description": "Always present in `spiritreceived`, and names the **opponent**. Where it also appears in `spiritgiven` it repeats the same opponent name.",
+            "examples": [
+              "Lebanon"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "When the score was submitted, tournament-local. Sent by some deployments only.",
+            "examples": [
+              "2025-11-18 12:50:00"
+            ]
+          },
+          "spiritmode": {
+            "type": "integer",
+            "description": "Scoring scheme id, matching `season.spiritmode`. Sent by some deployments only.",
+            "examples": [
+              1003
+            ]
+          },
+          "is_complete": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "is_visible": {
+            "$ref": "#/components/schemas/IntBool"
+          }
+        }
+      },
+      "GamesResponse": {
+        "type": "object",
+        "title": "GamesResponse",
+        "description": "Response body of the games endpoint.",
+        "required": [
+          "games",
+          "meta"
+        ],
+        "properties": {
+          "games": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Game"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "ActiveGamesResponse": {
+        "type": "object",
+        "title": "ActiveGamesResponse",
+        "description": "Response body of the active-games endpoint. The same envelope as the games list, with two extra fields per game. Empty outside event hours.",
+        "required": [
+          "games",
+          "meta"
+        ],
+        "properties": {
+          "games": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveGame"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "Game": {
+        "type": "object",
+        "title": "Game",
+        "description": "One game as it appears in the games list: scheduling, scores and status, with no per-goal detail.\n\n**Read the absence of a field carefully.** Every `null`, `0`, `\"0\"` and `false` is stripped from this object before it is sent, so `valid` present means `1` and `valid` absent means `0`. Empty strings are not stripped. `homescore` and `visitorscore` are the exception - they are restored to `0` for any game that is not `scheduled`.\n\nFour fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.\n",
+        "required": [
+          "game_id",
+          "hometeam",
+          "visitorteam",
+          "pool",
+          "time",
+          "status"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "hometeam": {
+            "type": "integer",
+            "description": "Joins to `teams[].team_id`.",
+            "examples": [
+              75
+            ]
+          },
+          "visitorteam": {
+            "type": "integer",
+            "examples": [
+              87
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "description": "Always present for an ongoing or completed game, including when it is `0`. Stripped for a scheduled game.",
+            "examples": [
+              13
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              9
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Derived rather than stored: `ongoing` when the game is flagged live, `completed` when either score is above zero, and `scheduled` otherwise. A genuine 0-0 that has finished therefore reports as `scheduled`.\n",
+            "enum": [
+              "scheduled",
+              "ongoing",
+              "completed"
+            ],
+            "examples": [
+              "completed"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "Scheduled start, tournament-local. Absent for an unscheduled game. There is no `time_utc` on this line; it is added in 1.9.17.",
+            "examples": [
+              "2025-11-17 11:15:00"
+            ]
+          },
+          "pool": {
+            "type": "integer",
+            "description": "Joins to `pools[].pool_id`.",
+            "examples": [
+              7
+            ]
+          },
+          "reservation": {
+            "type": "integer",
+            "description": "Joins to `reservations[].id`, which carries the field name.",
+            "examples": [
+              37
+            ]
+          },
+          "valid": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Absent rather than `0` when the game does not count."
+          },
+          "halftime": {
+            "type": "integer",
+            "description": "Seconds from the start of the game to halftime. Absent when halftime has not been recorded.",
+            "examples": [
+              1700
+            ]
+          },
+          "timer_start": {
+            "type": "integer",
+            "description": "Unix seconds at which the game clock was started. The basis for elapsed time, since in-game `time` values count from here.",
+            "examples": [
+              1763378101
+            ]
+          },
+          "timer_pause_start": {
+            "type": "integer",
+            "description": "Unix seconds at which the clock was paused, absent when it is running."
+          },
+          "timer_paused_duration": {
+            "type": "integer",
+            "description": "Total seconds the clock has spent paused. Subtract when converting an in-game `time` to a wall-clock time.",
+            "examples": [
+              1140
+            ]
+          },
+          "visitorsotg": {
+            "type": "integer",
+            "description": "Spirit points the away team received for this game, out of 20. Its home counterpart is stripped from this endpoint, so use the team-detail or spirit endpoints for a matched pair.\n",
+            "examples": [
+              12
+            ]
+          },
+          "islive": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Whether a video stream is or was available. Not the same as `status: ongoing`."
+          },
+          "liveurl": {
+            "type": "string",
+            "description": "Stream or highlights URL. Sometimes an empty string, which survives the falsy stripping that removes other empty values.",
+            "examples": [
+              "https://ultiworld.com/video/187606/"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The scheduling-name id, **as a string**. Resolve it via `gamename`, or ignore it.",
+            "examples": [
+              "534"
+            ]
+          },
+          "gamename": {
+            "type": "string",
+            "description": "Short label for the fixture, such as a bracket code. Same value as `gameschedulingname`.",
+            "examples": [
+              "wxo1"
+            ]
+          },
+          "gameschedulingname": {
+            "type": "string",
+            "description": "Duplicate of `gamename`, from a second join on the same table.",
+            "examples": [
+              "wxo1"
+            ]
+          },
+          "scheduling_name_home": {
+            "type": "integer",
+            "description": "Id of the placeholder that fills the home slot, resolved by `homeschedulingname`.",
+            "examples": [
+              82
+            ]
+          },
+          "scheduling_name_visitor": {
+            "type": "integer",
+            "examples": [
+              83
+            ]
+          },
+          "homeschedulingname": {
+            "type": "string",
+            "description": "Placeholder label for the home slot, meaningful before the team is known.",
+            "examples": [
+              "4A"
+            ]
+          },
+          "visitorschedulingname": {
+            "type": "string",
+            "examples": [
+              "5B"
+            ]
+          }
+        }
+      },
+      "ActiveGame": {
+        "title": "ActiveGame",
+        "description": "A game from the active-games endpoint. Everything in `Game`, plus a marker and the most recent thing to have happened.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Game"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from_active": {
+                "$ref": "#/components/schemas/IntBool",
+                "description": "Always `1`. Marks a game as having come from this endpoint rather than the full list."
+              },
+              "lastevent": {
+                "$ref": "#/components/schemas/LastEvent"
+              }
+            }
+          }
+        ]
+      },
+      "LastEvent": {
+        "type": "object",
+        "title": "LastEvent",
+        "description": "The most recent goal or game event, whichever happened later, or `{}` when nothing has happened yet.\n\nIt is one of three things and you tell them apart by their fields. A **goal** carries `scorer` and the running score. A **game event** carries `type` and `ishome`. A synthetic **halftime** marker is substituted when halftime is later than either, and has `type: \"halftime\"` with `ishome: -1`.\n",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Present on game events and on the synthetic halftime marker, absent on goals.",
+            "examples": [
+              "timeout",
+              "halftime",
+              "offence"
+            ]
+          },
+          "time": {
+            "type": "integer",
+            "description": "Seconds from the start of the game.",
+            "examples": [
+              2370
+            ]
+          },
+          "ishome": {
+            "type": "integer",
+            "description": "`1` for the home team, `0` for the away team, and `-1` on the synthetic halftime marker, which belongs to neither.",
+            "examples": [
+              1,
+              0,
+              -1
+            ]
+          },
+          "game": {
+            "type": "integer",
+            "description": "Game id. Present on goals.",
+            "examples": [
+              2
+            ]
+          },
+          "num": {
+            "type": "integer",
+            "description": "Goal number within the game, counting from zero.",
+            "examples": [
+              17
+            ]
+          },
+          "scorer": {
+            "type": "integer",
+            "description": "Player id of the scorer.",
+            "examples": [
+              1249
+            ]
+          },
+          "assist": {
+            "type": "integer",
+            "description": "Player id of the assist, `0` when there was none.",
+            "examples": [
+              1255
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "description": "Running home score after this goal.",
+            "examples": [
+              13
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              9
+            ]
+          },
+          "ishomegoal": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "iscallahan": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "scorerfirstname": {
+            "type": "string",
+            "examples": [
+              "Rémi"
+            ]
+          },
+          "scorerlastname": {
+            "type": "string",
+            "examples": [
+              "Pouplin"
+            ]
+          },
+          "assistfirstname": {
+            "type": "string",
+            "examples": [
+              "Louna"
+            ]
+          },
+          "assistlastname": {
+            "type": "string",
+            "examples": [
+              "GUENNOUNE"
+            ]
+          }
+        }
+      },
+      "GameDetailResponse": {
+        "type": "object",
+        "title": "GameDetailResponse",
+        "description": "One game in full. A composite of eleven separate lookups, which is why the same facts appear in several places under different names.\n\nWhere `game_result` and `game_info` disagree, prefer `game_info` for anything you intend to display - it resolves ids to names and carries the pool's rules - and `game_result` for `status`, which only exists there.\n\nNothing is stripped from this response, so zeroes and nulls arrive intact.\n",
+        "required": [
+          "game_result",
+          "game_info",
+          "seasoninfo",
+          "poolinfo",
+          "goals",
+          "meta"
+        ],
+        "properties": {
+          "game_result": {
+            "$ref": "#/components/schemas/GameResult"
+          },
+          "game_info": {
+            "$ref": "#/components/schemas/GameInfo"
+          },
+          "seasoninfo": {
+            "type": "object",
+            "description": "The full season row, including the seven fields the reference endpoint withholds and without the derived ones it adds.",
+            "additionalProperties": true
+          },
+          "poolinfo": {
+            "$ref": "#/components/schemas/PoolInfo"
+          },
+          "teams": {
+            "type": "object",
+            "description": "Both teams' aggregate records, in the same shape the teams endpoint uses. Absent when the game has no `game_info`.",
+            "properties": {
+              "hometeam": {
+                "$ref": "#/components/schemas/TeamStats"
+              },
+              "visitorteam": {
+                "$ref": "#/components/schemas/TeamStats"
+              }
+            }
+          },
+          "hometeam_scoreboard": {
+            "type": "array",
+            "description": "Home players who scored or assisted in this game, with their totals for this game only.",
+            "items": {
+              "$ref": "#/components/schemas/GameScoreboardPlayer"
+            }
+          },
+          "visitorteam_scoreboard": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameScoreboardPlayer"
+            }
+          },
+          "goals": {
+            "type": "array",
+            "description": "Every goal in the game in order, with the running score. The only place individual scoring events appear in this API.",
+            "items": {
+              "$ref": "#/components/schemas/Goal"
+            }
+          },
+          "gameevents": {
+            "type": "array",
+            "description": "Timeouts and other non-scoring events, in time order. Media events are excluded and appear in `mediaevents` instead.",
+            "items": {
+              "$ref": "#/components/schemas/GameEvent"
+            }
+          },
+          "mediaevents": {
+            "type": "array",
+            "description": "Media timeouts. Empty in every response checked.",
+            "items": {
+              "$ref": "#/components/schemas/GameEvent"
+            }
+          },
+          "homecaptain": {
+            "type": "integer",
+            "description": "Player id of the home captain, or `-1` when none is recorded - which is the common case. Not an object, and not a jersey number.",
+            "examples": [
+              -1
+            ]
+          },
+          "awaycaptain": {
+            "type": "integer",
+            "description": "Player id of the away captain, or `-1` when none is recorded. Named `awaycaptain` while its counterpart is `homecaptain`, and while the rest of the API says `visitor` rather than `away`.",
+            "examples": [
+              -1
+            ]
+          },
+          "spiritstats": {
+            "$ref": "#/components/schemas/GameSpiritStats"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "GameResult": {
+        "type": "object",
+        "title": "GameResult",
+        "description": "The game's stored row, with team names joined on and `status` derived. Closer to the raw data than `game_info`, and the only place several fields appear at all.\n\nThis object publishes `official`, `homesotg`, `respteam` and `resppers`, all of which the games list deliberately removes.\n",
+        "required": [
+          "game_id",
+          "hometeam",
+          "visitorteam",
+          "status"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "hometeam": {
+            "type": "integer",
+            "examples": [
+              75
+            ]
+          },
+          "visitorteam": {
+            "type": "integer",
+            "examples": [
+              87
+            ]
+          },
+          "hometeamname": {
+            "type": "string",
+            "examples": [
+              "France"
+            ]
+          },
+          "visitorteamname": {
+            "type": "string",
+            "examples": [
+              "Sweden"
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "examples": [
+              13
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              9
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Derived the same way as on the games list, and the field to read. Exists here but not in `game_info`.",
+            "enum": [
+              "scheduled",
+              "ongoing",
+              "completed"
+            ],
+            "examples": [
+              "completed"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "Scheduled start, tournament-local.",
+            "examples": [
+              "2025-11-17 11:15:00"
+            ]
+          },
+          "pool": {
+            "type": "integer",
+            "examples": [
+              7
+            ]
+          },
+          "reservation": {
+            "type": "integer",
+            "examples": [
+              37
+            ]
+          },
+          "valid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "homevalid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "visitorvalid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "isongoing": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Sent as `0` here, unlike the games list where it is stripped."
+          },
+          "halftime": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Seconds from the start of the game to halftime.",
+            "examples": [
+              1700
+            ]
+          },
+          "homesotg": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Spirit points the home team received for this game, out of 20. Removed from the games list but published here, giving a matched pair with `visitorsotg`.\n",
+            "examples": [
+              11
+            ]
+          },
+          "visitorsotg": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Spirit points the away team received for this game, out of 20.",
+            "examples": [
+              12
+            ]
+          },
+          "official": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Game advisors or officials, free text. Removed from the games list but published here.",
+            "examples": [
+              "Teresa, Timur"
+            ]
+          },
+          "respteam": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Team responsible for scorekeeping."
+          },
+          "resppers": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Person responsible for scorekeeping."
+          },
+          "timeslot": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "homedefenses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Blocks by the home team, when the event records defensive stats.",
+            "examples": [
+              0
+            ]
+          },
+          "visitordefenses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "examples": [
+              0
+            ]
+          },
+          "islive": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "liveurl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timer_start": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix seconds at which the game clock was started.",
+            "examples": [
+              1763378101
+            ]
+          },
+          "timer_pause_start": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timer_paused_duration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "examples": [
+              0
+            ]
+          },
+          "scheduling_name_home": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "scheduling_name_visitor": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Scheduling-name id, as a string."
+          },
+          "gamename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GameInfo": {
+        "type": "object",
+        "title": "GameInfo",
+        "description": "The display view of the game. Resolves team, pool and division ids to names, adds the pool's scoring rules, and names the field. Prefer this for rendering. Note it carries no `status`.",
+        "required": [
+          "game_id",
+          "hometeam",
+          "visitorteam",
+          "series",
+          "season"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "hometeam": {
+            "type": "integer",
+            "examples": [
+              75
+            ]
+          },
+          "hometeamname": {
+            "type": "string",
+            "examples": [
+              "France"
+            ]
+          },
+          "visitorteam": {
+            "type": "integer",
+            "examples": [
+              87
+            ]
+          },
+          "visitorteamname": {
+            "type": "string",
+            "examples": [
+              "Sweden"
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "examples": [
+              13
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              9
+            ]
+          },
+          "time": {
+            "type": "string",
+            "examples": [
+              "2025-11-17 11:15:00"
+            ]
+          },
+          "pool": {
+            "type": "integer",
+            "examples": [
+              7
+            ]
+          },
+          "poolname": {
+            "type": "string",
+            "description": "Named `name` on `PoolInfo` and `poolname` on the reference endpoint's `Pool`.",
+            "examples": [
+              "Pool A"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "examples": [
+              8
+            ]
+          },
+          "seriesname": {
+            "type": "string",
+            "examples": [
+              "Mixed"
+            ]
+          },
+          "season": {
+            "type": "string",
+            "examples": [
+              "wbuc2025"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "The pool's display colour, RGB hex with no leading `#`.",
+            "examples": [
+              "0000FF"
+            ]
+          },
+          "winningscore": {
+            "type": "integer",
+            "description": "Score the game is played to.",
+            "examples": [
+              13
+            ]
+          },
+          "scorecap": {
+            "type": "integer",
+            "description": "Hard score cap.",
+            "examples": [
+              13
+            ]
+          },
+          "timecap": {
+            "type": "integer",
+            "description": "Time cap in minutes.",
+            "examples": [
+              45
+            ]
+          },
+          "timeslot": {
+            "type": "integer",
+            "description": "Slot length in minutes, from the pool.",
+            "examples": [
+              60
+            ]
+          },
+          "gametimeslot": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Per-game override of `timeslot`."
+          },
+          "fieldname": {
+            "type": "string",
+            "description": "Field label, always a string. Map through `config.FIELD_NAMES` for a display name.",
+            "examples": [
+              "13"
+            ]
+          },
+          "placename": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Venue name, null when the event has a single site."
+          },
+          "isongoing": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "homevalid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "visitorvalid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "scheduling_name_home": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "scheduling_name_visitor": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "phometeamname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Placeholder home team name, used before the fixture is resolved."
+          },
+          "pvisitorteamname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gamename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PoolInfo": {
+        "type": "object",
+        "title": "PoolInfo",
+        "description": "A pool with its full rule set. Wider than the reference endpoint's `Pool`, and note the name differences: `name` here, `poolname` there, and `series` here, `series_id` there.\n",
+        "required": [
+          "pool_id",
+          "name",
+          "series",
+          "type"
+        ],
+        "properties": {
+          "pool_id": {
+            "type": "integer",
+            "examples": [
+              7
+            ]
+          },
+          "name": {
+            "type": "string",
+            "examples": [
+              "Pool A"
+            ]
+          },
+          "ordering": {
+            "type": "string",
+            "examples": [
+              "A"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "examples": [
+              8
+            ]
+          },
+          "seriesname": {
+            "type": "string",
+            "examples": [
+              "Mixed"
+            ]
+          },
+          "season": {
+            "type": "string",
+            "examples": [
+              "wbuc2025"
+            ]
+          },
+          "type": {
+            "type": "integer",
+            "description": "How the pool is played: `1` round robin, `2` playoff bracket, `3` Swiss draw, `4` cross matches. On the standings endpoint this can also be `-1`, meaning a round-robin pool holding a single game.\n",
+            "examples": [
+              1
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "examples": [
+              "0000FF"
+            ]
+          },
+          "timeslot": {
+            "type": "integer",
+            "description": "Slot length in minutes.",
+            "examples": [
+              60
+            ]
+          },
+          "teams": {
+            "type": "integer",
+            "description": "Configured team count, `0` when it is not set explicitly.",
+            "examples": [
+              0
+            ]
+          },
+          "winningscore": {
+            "type": "integer",
+            "description": "Score the pool's games are played to.",
+            "examples": [
+              13
+            ]
+          },
+          "scorecap": {
+            "type": "integer",
+            "examples": [
+              13
+            ]
+          },
+          "timecap": {
+            "type": "integer",
+            "description": "Time cap in minutes.",
+            "examples": [
+              45
+            ]
+          },
+          "halftime": {
+            "type": "integer",
+            "description": "Halftime break length in minutes. Not to be confused with `games[].halftime`, which is seconds elapsed.",
+            "examples": [
+              25
+            ]
+          },
+          "halftimescore": {
+            "type": "integer",
+            "description": "Score at which halftime is taken.",
+            "examples": [
+              7
+            ]
+          },
+          "timeoutlen": {
+            "type": "integer",
+            "description": "Timeout length in seconds.",
+            "examples": [
+              75
+            ]
+          },
+          "betweenpointslen": {
+            "type": "integer",
+            "description": "Time between points in seconds.",
+            "examples": [
+              75
+            ]
+          },
+          "timeouts": {
+            "type": "integer",
+            "description": "Timeouts allowed per `timeoutsper`.",
+            "examples": [
+              1
+            ]
+          },
+          "timeoutsper": {
+            "type": "string",
+            "description": "Whether `timeouts` is counted per game or per half.",
+            "examples": [
+              "game",
+              "half"
+            ]
+          },
+          "timeoutsovertime": {
+            "type": "integer",
+            "examples": [
+              1
+            ]
+          },
+          "timeoutstimecap": {
+            "type": "integer",
+            "examples": [
+              1
+            ]
+          },
+          "mvgames": {
+            "type": "integer",
+            "description": "Games needed to win the tie, for a best-of series.",
+            "examples": [
+              1
+            ]
+          },
+          "addscore": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "forfeitscore": {
+            "type": "integer",
+            "description": "Score awarded to the winner of a forfeit.",
+            "examples": [
+              0
+            ]
+          },
+          "forfeitagainst": {
+            "type": "integer",
+            "examples": [
+              0
+            ]
+          },
+          "follower": {
+            "type": "integer",
+            "examples": [
+              0
+            ]
+          },
+          "visible": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "played": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "placementpool": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "continuingpool": {
+            "$ref": "#/components/schemas/IntBool"
+          }
+        }
+      },
+      "Goal": {
+        "type": "object",
+        "title": "Goal",
+        "description": "One goal, with the running score after it. Ordered by `num` within a game.",
+        "required": [
+          "game",
+          "num",
+          "ishomegoal"
+        ],
+        "properties": {
+          "game": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "num": {
+            "type": "integer",
+            "description": "Position in the game, counting from zero.",
+            "examples": [
+              0
+            ]
+          },
+          "time": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Seconds from the start of the game, not a clock time. Subtract `timer_paused_duration` to relate it to wall-clock.",
+            "examples": [
+              245
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "When the goal was entered, tournament-local. This is the scorekeeper's entry time, which may be well after the game - at the event sampled some rows were recorded three days later - so do not use it as the time of the goal.\n",
+            "examples": [
+              "2025-11-20 08:43:40"
+            ]
+          },
+          "scorer": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Player id, or `0` when the scorer was not recorded.",
+            "examples": [
+              1249
+            ]
+          },
+          "assist": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Player id, or `0` when there was no assist or it was not recorded.",
+            "examples": [
+              1255
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "description": "Running home score after this goal.",
+            "examples": [
+              1
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              0
+            ]
+          },
+          "ishomegoal": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Which team scored. The only reliable indicator, since a callahan is scored by the defending side."
+          },
+          "iscallahan": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "scorerfirstname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "examples": [
+              "Rémi"
+            ]
+          },
+          "scorerlastname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "examples": [
+              "Pouplin"
+            ]
+          },
+          "scorernum": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Scorer's jersey number.",
+            "examples": [
+              42
+            ]
+          },
+          "assistfirstname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "examples": [
+              "Louna"
+            ]
+          },
+          "assistlastname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "examples": [
+              "GUENNOUNE"
+            ]
+          },
+          "assistnum": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "examples": [
+              18
+            ]
+          }
+        }
+      },
+      "GameEvent": {
+        "type": "object",
+        "title": "GameEvent",
+        "description": "A non-scoring event. Timeouts are merged in from a separate table and reported with `type: \"timeout\"`.",
+        "required": [
+          "time",
+          "ishome",
+          "type"
+        ],
+        "properties": {
+          "time": {
+            "type": "integer",
+            "description": "Seconds from the start of the game.",
+            "examples": [
+              2370
+            ]
+          },
+          "ishome": {
+            "$ref": "#/components/schemas/IntBool",
+            "description": "Which team the event belongs to."
+          },
+          "type": {
+            "type": "string",
+            "description": "`offence` marks which team started on offence, so it usually appears once at `time: 0`. `media` events are filtered out of this list and returned in `mediaevents`.",
+            "examples": [
+              "offence",
+              "timeout"
+            ]
+          },
+          "info": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free text attached to the event."
+          }
+        }
+      },
+      "GameScoreboardPlayer": {
+        "type": "object",
+        "title": "GameScoreboardPlayer",
+        "description": "A player's contribution to **this game only**, unlike `PlayerStats` which totals the event. Only players who scored or assisted appear, so this is not a team sheet.",
+        "required": [
+          "player_id",
+          "firstname",
+          "lastname"
+        ],
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "examples": [
+              1255
+            ]
+          },
+          "firstname": {
+            "type": "string",
+            "examples": [
+              "Louna"
+            ]
+          },
+          "lastname": {
+            "type": "string",
+            "examples": [
+              "GUENNOUNE"
+            ]
+          },
+          "profile_id": {
+            "type": "integer",
+            "description": "Usually equal to `player_id`.",
+            "examples": [
+              1255
+            ]
+          },
+          "num": {
+            "type": "integer",
+            "description": "Jersey number.",
+            "examples": [
+              18
+            ]
+          },
+          "done": {
+            "type": "integer",
+            "description": "Goals in this game.",
+            "examples": [
+              3
+            ]
+          },
+          "fedin": {
+            "type": "integer",
+            "description": "Assists in this game.",
+            "examples": [
+              2
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "`done` plus `fedin`.",
+            "examples": [
+              5
+            ]
+          }
+        }
+      },
+      "GameSpiritStats": {
+        "type": "object",
+        "title": "GameSpiritStats",
+        "description": "Both teams' spirit scores for this game. **These are the scores awarded to the named team by its opponent**, which is the opposite of what the key names suggest - the response says so itself in `note`.\n\nAbsent when the event does not publish spirit points, and `comments` is dropped entirely rather than nulled when spirit comments are disabled.\n",
+        "properties": {
+          "note": {
+            "type": "string",
+            "description": "A fixed string restating that these are the scores for the named team.",
+            "examples": [
+              "These are the scores FOR the specified team"
+            ]
+          },
+          "hometeam": {
+            "$ref": "#/components/schemas/GameSpiritScore"
+          },
+          "visitorteam": {
+            "$ref": "#/components/schemas/GameSpiritScore"
+          }
+        }
+      },
+      "GameSpiritScore": {
+        "type": "object",
+        "title": "GameSpiritScore",
+        "description": "One team's spirit score for one game, awarded by its opponent. Each category is 0-4; unlike `TeamSpiritGame` there is no `total`, so sum the five yourself.",
+        "required": [
+          "game_id",
+          "team_id",
+          "cat1",
+          "cat2",
+          "cat3",
+          "cat4",
+          "cat5"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "The team the score is **for**, not the team that gave it.",
+            "examples": [
+              75
+            ]
+          },
+          "cat1": {
+            "type": "integer",
+            "description": "Rules knowledge and use.",
+            "examples": [
+              2
+            ]
+          },
+          "cat2": {
+            "type": "integer",
+            "description": "Fouls and body contact.",
+            "examples": [
+              2
+            ]
+          },
+          "cat3": {
+            "type": "integer",
+            "description": "Fair-mindedness.",
+            "examples": [
+              2
+            ]
+          },
+          "cat4": {
+            "type": "integer",
+            "description": "Positive attitude and self-control.",
+            "examples": [
+              2
+            ]
+          },
+          "cat5": {
+            "type": "integer",
+            "description": "Communication.",
+            "examples": [
+              3
+            ]
+          },
+          "comments": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free text from the opponent. Removed entirely when the event disables spirit comments."
+          }
+        }
+      },
+      "StandingsResponse": {
+        "type": "object",
+        "title": "StandingsResponse",
+        "description": "Response body of the standings endpoint.",
+        "required": [
+          "standings",
+          "meta"
+        ],
+        "properties": {
+          "standings": {
+            "$ref": "#/components/schemas/Standings"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "Standings": {
+        "title": "Standings",
+        "description": "A pool's full rule set, its fixtures, and UltiOrganizer's own rendering of the table.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PoolInfo"
+          },
+          {
+            "type": "object",
+            "required": [
+              "games",
+              "html"
+            ],
+            "properties": {
+              "games": {
+                "type": "array",
+                "description": "The pool's fixtures, with team names resolved. A thinner shape than the games endpoint - no status, no scoring detail - but enough to build a table.",
+                "items": {
+                  "$ref": "#/components/schemas/StandingsGame"
+                }
+              },
+              "html": {
+                "type": "string",
+                "description": "The pool table or bracket as an HTML fragment, produced by UltiOrganizer rather than by Live!. Inline styles, `<table>` layout, and a structure that varies by pool `type`.\n\nLinks are replaced by placeholder tokens for the client to substitute: `{TEAM:123}`, `{POOL:64}` and `{GAME:377}`. Which tokens appear depends on the pool type - a round robin emits team and pool tokens, a playoff bracket team and game tokens, and a Swiss draw none at all.\n\nEmpty for a round-robin pool holding a single game, the case that reports `type: -1`. Anything after a `Games` heading or a schedule link is cut before the fragment is returned, so it contains the table and nothing else.\n",
+                "examples": [
+                  "<table style='font-weight: bold;' border='2' width='auto'>…{TEAM:7}…</table>"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "StandingsGame": {
+        "type": "object",
+        "title": "StandingsGame",
+        "description": "One fixture within a pool, as carried by the standings endpoint.",
+        "required": [
+          "game_id",
+          "hometeam",
+          "visitorteam"
+        ],
+        "properties": {
+          "game_id": {
+            "type": "integer",
+            "examples": [
+              377
+            ]
+          },
+          "hometeam": {
+            "type": "integer",
+            "examples": [
+              5
+            ]
+          },
+          "visitorteam": {
+            "type": "integer",
+            "examples": [
+              2
+            ]
+          },
+          "hometeamname": {
+            "type": "string",
+            "examples": [
+              "Canada"
+            ]
+          },
+          "visitorteamname": {
+            "type": "string",
+            "examples": [
+              "Finland"
+            ]
+          },
+          "homescore": {
+            "type": "integer",
+            "examples": [
+              13
+            ]
+          },
+          "visitorscore": {
+            "type": "integer",
+            "examples": [
+              3
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "Scheduled start, tournament-local.",
+            "examples": [
+              "2025-11-16 13:45:00"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The fixture as a readable string. Unlike `games[].name` this is a label, not an id.",
+            "examples": [
+              "Canada - Finland"
+            ]
+          },
+          "gamename": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short bracket code, when the fixture has one."
+          },
+          "phometeamname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Placeholder home team name, used before the fixture is resolved."
+          },
+          "pvisitorteamname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SpiritResponse": {
+        "type": "object",
+        "title": "SpiritResponse",
+        "description": "Response body of the spirit endpoint.\n\n**May be `{}`** - with no `spirit` key and no `meta` - when the event does not publish spirit points. Check `season.spirit` before fetching, and guard for the empty case regardless.\n",
+        "properties": {
+          "spirit": {
+            "type": "array",
+            "description": "One row per team in the division, ordered by `total` descending.",
+            "items": {
+              "$ref": "#/components/schemas/SpiritBoardEntry"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "SpiritBoardEntry": {
+        "type": "object",
+        "title": "SpiritBoardEntry",
+        "description": "One team's **mean** spirit score across its games, in the five WFDF Spirit of the Game categories.\n\nEvery figure here is an average per game, not a sum, which is what makes teams with different numbers of games comparable. Means are rounded to two decimal places. Category means are fractional and run 0-4; `total` is the mean per-game total, out of 20. To get sums instead, use `spirit` and `spiritavg` on the teams endpoint, or `spiritreceived` on team detail for the per-game breakdown.\n\nOnly games where **both** teams have submitted a score are counted, and a score of zero across all five categories is excluded, so this leaderboard can lag behind the results for a round or two.\n\nRows are grouped by team name rather than by id, so two teams sharing a name within one division would be merged into a single row.\n",
+        "required": [
+          "team_id",
+          "teamname",
+          "cat1",
+          "cat2",
+          "cat3",
+          "cat4",
+          "cat5",
+          "games",
+          "total"
+        ],
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              95
+            ]
+          },
+          "teamname": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "teamvalid": {
+            "$ref": "#/components/schemas/IntBool"
+          },
+          "cat1": {
+            "type": "number",
+            "description": "Mean rules knowledge and use.",
+            "examples": [
+              2
+            ]
+          },
+          "cat2": {
+            "type": "number",
+            "description": "Mean fouls and body contact.",
+            "examples": [
+              2.08
+            ]
+          },
+          "cat3": {
+            "type": "number",
+            "description": "Mean fair-mindedness.",
+            "examples": [
+              2.33
+            ]
+          },
+          "cat4": {
+            "type": "number",
+            "description": "Mean positive attitude and self-control.",
+            "examples": [
+              2.67
+            ]
+          },
+          "cat5": {
+            "type": "number",
+            "description": "Mean communication.",
+            "examples": [
+              2.42
+            ]
+          },
+          "games": {
+            "type": "integer",
+            "description": "Games the mean is taken over. Lower than the team's games played whenever an opponent has not submitted, since a game only counts once both scores are in.",
+            "examples": [
+              12
+            ]
+          },
+          "total": {
+            "type": "number",
+            "description": "Mean total per game, out of 20. The column the list is sorted by.",
+            "examples": [
+              11.5
+            ]
+          }
+        }
+      },
+      "PlayersResponse": {
+        "type": "object",
+        "title": "PlayersResponse",
+        "description": "Response body of the players endpoint.",
+        "required": [
+          "players",
+          "meta"
+        ],
+        "properties": {
+          "players": {
+            "type": "array",
+            "description": "Every player id in the season. Each entry has `player_id` and nothing else.",
+            "items": {
+              "type": "object",
+              "required": [
+                "player_id"
+              ],
+              "properties": {
+                "player_id": {
+                  "type": "integer",
+                  "examples": [
+                    12
+                  ]
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "StatisticsResponse": {
+        "type": "object",
+        "title": "StatisticsResponse",
+        "description": "Response body of the per-division statistics endpoint.",
+        "required": [
+          "statistics"
+        ],
+        "properties": {
+          "statistics": {
+            "type": "array",
+            "description": "One row per player in the division, ordered by `totalavg` descending.",
+            "items": {
+              "$ref": "#/components/schemas/StatisticsPlayer"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "StatisticsPlayer": {
+        "title": "StatisticsPlayer",
+        "description": "A player's event totals within a division leaderboard.\n\nA **narrower** shape than the team-detail roster despite sharing most field names: this endpoint returns only the twelve statistical fields plus the `team_id` it adds itself. `num`, `series`, `seriesname` and `team` are not among them, so use team detail if you need a player's jersey number or division.\n\nIt is also filtered differently. Players who appeared in no games are omitted here, whereas team detail lists the whole squad with zeroes.\n",
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "team_id": {
+                "type": "integer",
+                "description": "Added by this endpoint. Holds the same value as `team`, which may also be present.",
+                "examples": [
+                  112
+                ]
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/PlayerStats"
+          }
+        ]
+      },
+      "PlayerStats": {
+        "type": "object",
+        "title": "PlayerStats",
+        "description": "A player with event totals already aggregated across every game, as carried by team detail and the statistics endpoints.\n\nThe field names are UltiOrganizer's: `done` is goals, `fedin` is assists, and the three `*avg` fields divide those by `games`.\n\n**Ongoing games are excluded from every figure here.** A player's totals do not move until the game they are playing is marked finished, so during a round these numbers lag the live scores.\n",
+        "required": [
+          "player_id",
+          "firstname",
+          "lastname"
+        ],
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "examples": [
+              1114
+            ]
+          },
+          "firstname": {
+            "type": "string",
+            "examples": [
+              "Alex"
+            ]
+          },
+          "lastname": {
+            "type": "string",
+            "examples": [
+              "Osborne"
+            ]
+          },
+          "num": {
+            "type": "integer",
+            "description": "Jersey number.",
+            "examples": [
+              99
+            ]
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id. Named `team` here, not `team_id`.",
+            "examples": [
+              68
+            ]
+          },
+          "teamname": {
+            "type": "string",
+            "examples": [
+              "Australia"
+            ]
+          },
+          "series": {
+            "type": "integer",
+            "examples": [
+              8
+            ]
+          },
+          "seriesname": {
+            "type": "string",
+            "examples": [
+              "Mixed"
+            ]
+          },
+          "games": {
+            "type": "integer",
+            "description": "Games this player appeared in, counted from the team sheet rather than from the team's fixture list, so it varies between players in the same squad. The denominator for every average below.",
+            "examples": [
+              12
+            ]
+          },
+          "done": {
+            "type": "integer",
+            "description": "Goals scored across the event.",
+            "examples": [
+              2
+            ]
+          },
+          "fedin": {
+            "type": "integer",
+            "description": "Assists across the event.",
+            "examples": [
+              1
+            ]
+          },
+          "callahan": {
+            "type": "integer",
+            "description": "Callahans across the event.",
+            "examples": [
+              0
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "`done` plus `fedin`.",
+            "examples": [
+              3
+            ]
+          },
+          "doneavg": {
+            "type": "number",
+            "description": "Goals per team game, to four decimal places.",
+            "examples": [
+              0.1667
+            ]
+          },
+          "fedinavg": {
+            "type": "number",
+            "description": "Assists per team game.",
+            "examples": [
+              0.0833
+            ]
+          },
+          "totalavg": {
+            "type": "number",
+            "description": "`total` per team game. The column the statistics endpoint sorts by.",
+            "examples": [
+              0.25
+            ]
+          }
+        }
+      },
+      "TopStatisticsResponse": {
+        "type": "object",
+        "title": "TopStatisticsResponse",
+        "description": "Response body of the event-wide records endpoint.",
+        "required": [
+          "statistics"
+        ],
+        "properties": {
+          "statistics": {
+            "$ref": "#/components/schemas/TopStatistics"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "TopStatistics": {
+        "type": "object",
+        "title": "TopStatistics",
+        "description": "Three leaderboards of standout **single-game** performances, plus one stray member.\n\nThe `\"0\"` property is not data. It is an artefact of how the object is assembled and always holds the integer `0`. Skip it rather than treating it as a fourth list.\n",
+        "required": [
+          "topOverall",
+          "topCallahans",
+          "topPairs"
+        ],
+        "properties": {
+          "topOverall": {
+            "type": "array",
+            "description": "Best combined hauls in a single game, ordered by `total` descending. One row per player per game, so a player appears once for each game they feature in.\n\nLength is not fixed. The list is cut at the total held by the hundredth row, then widened to include ties if that would leave fewer than 75 rows.\n",
+            "items": {
+              "$ref": "#/components/schemas/TopOverallEntry"
+            }
+          },
+          "topCallahans": {
+            "type": "array",
+            "description": "Most callahans in a single game, ordered descending, capped at 100 rows. Note these rows carry no `goals` or `assists`.",
+            "items": {
+              "$ref": "#/components/schemas/TopCallahanEntry"
+            }
+          },
+          "topPairs": {
+            "type": "array",
+            "description": "The most productive scorer-assist combinations across the whole event, counting both directions as one pair, ordered descending and capped at 100 rows.\n\nUnlike the other two lists this is an event total, not a single-game figure.\n",
+            "items": {
+              "$ref": "#/components/schemas/TopPairEntry"
+            }
+          },
+          "0": {
+            "type": "integer",
+            "description": "Always `0`. An artefact of how the response is built, not a leaderboard. Ignore it.",
+            "examples": [
+              0
+            ]
+          }
+        }
+      },
+      "TopOverallEntry": {
+        "type": "object",
+        "title": "TopOverallEntry",
+        "description": "One player's goals and assists in one game.",
+        "required": [
+          "game",
+          "total",
+          "player_id",
+          "firstname",
+          "lastname"
+        ],
+        "properties": {
+          "game": {
+            "type": "integer",
+            "description": "The game this haul was scored in. Joins to `game_id` elsewhere - note the field is `game` here, not `game_id`.",
+            "examples": [
+              312
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "`goals` plus `assists` in this game. The column the list is sorted by.",
+            "examples": [
+              10
+            ]
+          },
+          "goals": {
+            "type": "integer",
+            "description": "Goals in this game.",
+            "examples": [
+              0
+            ]
+          },
+          "assists": {
+            "type": "integer",
+            "description": "Assists in this game.",
+            "examples": [
+              10
+            ]
+          },
+          "player_id": {
+            "type": "integer",
+            "examples": [
+              943
+            ]
+          },
+          "firstname": {
+            "type": "string",
+            "description": "May carry trailing whitespace, as entered.",
+            "examples": [
+              "Pablo "
+            ]
+          },
+          "lastname": {
+            "type": "string",
+            "examples": [
+              "Dorta"
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              57
+            ]
+          },
+          "series_id": {
+            "type": "integer",
+            "examples": [
+              6
+            ]
+          }
+        }
+      },
+      "TopCallahanEntry": {
+        "type": "object",
+        "title": "TopCallahanEntry",
+        "description": "One player's callahans in one game. The same shape as `TopOverallEntry` without `goals` and `assists`, since `total` here is the callahan count.",
+        "required": [
+          "game",
+          "total",
+          "player_id",
+          "firstname",
+          "lastname"
+        ],
+        "properties": {
+          "game": {
+            "type": "integer",
+            "examples": [
+              786
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "Callahans in this game.",
+            "examples": [
+              1
+            ]
+          },
+          "player_id": {
+            "type": "integer",
+            "examples": [
+              690
+            ]
+          },
+          "firstname": {
+            "type": "string",
+            "examples": [
+              "Ajith"
+            ]
+          },
+          "lastname": {
+            "type": "string",
+            "examples": [
+              "Jagadish"
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "examples": [
+              42
+            ]
+          },
+          "series_id": {
+            "type": "integer",
+            "examples": [
+              5
+            ]
+          }
+        }
+      },
+      "TopPairEntry": {
+        "type": "object",
+        "title": "TopPairEntry",
+        "description": "Two players and how often they connected for a goal across the event, in either direction.\n\n**The two player ids are held under raw SQL expressions as property names.** They are stable on this line but are not names you would want in a client, so map them on read.\n\nThe `assist_` and `score_` name prefixes follow the id ordering, not who threw and who caught: `assist_*` names the lower player id and `score_*` the higher. A pair's roles are not recoverable from this endpoint.\n",
+        "required": [
+          "total",
+          "team_id",
+          "series_id"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "greatest(g.`scorer`, g.`assist`)": {
+            "type": "integer",
+            "description": "The **higher** of the two player ids. Named for the SQL expression that produced it.",
+            "examples": [
+              1882
+            ]
+          },
+          "least(g.`scorer`, g.`assist`)": {
+            "type": "integer",
+            "description": "The **lower** of the two player ids.",
+            "examples": [
+              1879
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "Goals this pair connected for across the event, in either direction.",
+            "examples": [
+              37
+            ]
+          },
+          "assist_firstname": {
+            "type": "string",
+            "description": "First name of the **lower** of the two player ids.",
+            "examples": [
+              "Sivaraman"
+            ]
+          },
+          "assist_lastname": {
+            "type": "string",
+            "examples": [
+              "Venkatesan"
+            ]
+          },
+          "score_firstname": {
+            "type": "string",
+            "description": "First name of the **higher** of the two player ids.",
+            "examples": [
+              "Neelakandan"
+            ]
+          },
+          "score_lastname": {
+            "type": "string",
+            "examples": [
+              "Paneerselvam"
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Team of the higher-id player. Both are on the same team in practice.",
+            "examples": [
+              112
+            ]
+          },
+          "series_id": {
+            "type": "integer",
+            "examples": [
+              9
+            ]
+          }
+        }
+      },
+      "ConfigResponse": {
+        "type": "object",
+        "title": "ConfigResponse",
+        "description": "Response body of the config endpoint.",
+        "required": [
+          "config",
+          "sourceInfo"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/FullConfig"
+          },
+          "sourceInfo": {
+            "type": "object",
+            "description": "Where each setting's value came from, keyed by the same names as `config`. Held the same 35 keys as `config` at the deployment sampled.",
+            "additionalProperties": {
+              "type": "string",
+              "description": "- `default` built-in, never overridden\n- `json` set through the admin interface\n- `php` set in a local PHP config file\n- `hidden` forced by the application, not user-editable\n",
+              "enum": [
+                "default",
+                "json",
+                "php",
+                "hidden"
+              ]
+            },
+            "examples": [
+              {
+                "LIVE_SEASON_ID": "json",
+                "UO_URL_PREFIX": "hidden"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "FullConfig": {
+        "title": "FullConfig",
+        "description": "Every setting in `HeartbeatConfig`, with identical values, plus the three the heartbeat strips before writing itself.\n",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HeartbeatConfig"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "LIVE_ALLOWED_ENTITIES": {
+                "type": "object",
+                "description": "Every entity the dynamic API will serve, and how long its response is cached server-side. The authoritative source for the cache lifetimes quoted elsewhere in this document, since a deployment can override the defaults.\n\nNote this lists `hb` and `wipe`, which are not data endpoints, and does not list `config` - which is nonetheless served, because the cache is written for any entity the router resolves.\n",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "cacheLife": {
+                      "type": "integer",
+                      "description": "Seconds the entity's response is cached before it is rebuilt.",
+                      "examples": [
+                        300
+                      ]
+                    }
+                  }
+                },
+                "examples": [
+                  {
+                    "reference": {
+                      "cacheLife": 300
+                    },
+                    "hb": {
+                      "cacheLife": 15
+                    },
+                    "games": {
+                      "cacheLife": 60
+                    },
+                    "teams": {
+                      "cacheLife": 120
+                    },
+                    "standings": {
+                      "cacheLife": 120
+                    },
+                    "spirit": {
+                      "cacheLife": 120
+                    },
+                    "players": {
+                      "cacheLife": 600
+                    },
+                    "statistics": {
+                      "cacheLife": 120
+                    },
+                    "wipe": {
+                      "cacheLife": 0
+                    }
+                  }
+                ]
+              },
+              "IS_DEV": {
+                "type": "boolean",
+                "description": "Whether the deployment runs in development mode. Expected to be `false` in public."
+              },
+              "BEACH_ULTIMATE_SHOWCASE_AFTER_TOURNAMENT": {
+                "type": "boolean",
+                "description": "Whether to show BULA promotional content once the event has finished."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
