@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+  <head>
+    <title>Live! by BULA API — ReDoc</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body>
+    <div id="redoc"></div>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+    <script>
+    // ReDoc has no built-in version switcher, so pick the spec from ?v=<version>.
+      // Match against a fixed list rather than interpolating the query string
+      // straight into the URL, so ?v=//example.com cannot load a foreign spec.
+      var VERSIONS = ["1.9.14"];
+      var requested = new URLSearchParams(location.search).get("v");
+      var version = VERSIONS.indexOf(requested) !== -1 ? requested : VERSIONS[0];
+      Redoc.init("openapi-" + version + ".json", {}, document.getElementById("redoc"));
+    </script>
+  </body>
+</html>
