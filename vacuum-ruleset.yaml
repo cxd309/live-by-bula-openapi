@@ -1,0 +1,22 @@
+# Vacuum ruleset for a reverse-engineered specification.
+#
+# Starts from vacuum's "recommended" set and switches off rules that either cannot be
+# satisfied or are not worth satisfying here. This spec documents an API that already
+# exists, so its paths and property names are facts to be recorded, not choices we can
+# make.
+
+extends: [[vacuum:oas, recommended]]
+
+rules:
+  # Config keys really are SCREAMING_SNAKE_CASE, and data fields are lowercase
+  # run-together words (`teamname`, `spiritgiven`, `fedinavg`).
+  camel-case-properties: off
+
+  # Real filenames, e.g. /_heartbeat.json and /{seasonId}_games_{gameId}.json.
+  paths-kebab-case: off
+
+  # Wants a worked example body on every response. These responses run from 10KB to
+  # several MB, so a full one would dwarf the spec and a truncated one would be
+  # misleading about what the endpoint returns. Real values are carried per-field
+  # via `examples` instead.
+  oas3-missing-example: off
