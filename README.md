@@ -24,11 +24,31 @@ There is one spec per **distinct response shape**, named for the earliest releas
 | ----------------- | --------------------- | --------------------------------------------------------------------------- |
 | **1.9.14–1.9.16** | `openapi-1.9.14.yaml` | Complete. All 13 endpoints, verified against source and live data.          |
 | **1.9.17**        | `openapi-1.9.17.yaml` | Complete. All 13 endpoints, verified against four deployments.              |
-| **3.0.x**         | -                     | Planned.                                                                    |
+| **3.0.6**         | `openapi-3.0.6.yaml`  | Complete. Both transports, verified against WUCC 2026.                      |
 | 1.8.x and older   | -                     | Not covered, see [Legacy deployments](#legacy-and-unsupported-deployments). |
 | 2.x               | -                     | Not covered. Not seen on any live deployment.                               |
 
 ## Changelog
+
+### 3.0.6
+
+Live! 3 runs on UltiOrganizer 4 and is a different API, not a revision of 1.9.
+
+| Change                                    | What it means                                                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Spirit categories are variable            | `cat1`-`cat5` became `cat1`-`catN`. Read `season.spiritCategories` for the real list and never assume five. `0` is now a real score.  |
+| `playerevents` entity added               | A per-player scoring history, game by game. There was no per-player endpoint at all on 1.9.                                           |
+| `pool_placements` added                   | Each team's resolved position in each pool, as data. On 1.9 the only ranking was inside the standings endpoint's rendered HTML.       |
+| `completed` means something else          | A game is completed once it has started and stopped, so 0-0 results and forfeits now count. This shifts spirit and win averages.      |
+| Spirit visibility enforced                | Scores appear only when both teams have submitted and the game is cleared. The games list no longer leaks `visitorsotg`.              |
+| Team spirit objects reduced               | `spiritstats` and `spirittotal` are single-field objects; per-category detail moved into `spiritgiven` / `spiritreceived`.            |
+| `teamvalid` dropped from the spirit board | Teams averaging zero are now included rather than filtered out.                                                                       |
+| Countries are always resolvable           | `country_id` is an integer, inherited from a team's club where needed, with a synthetic `-1` "Unknown" row so the join never dangles. |
+| Ids validated against the event           | Asking for an id from a different event returns `400` instead of data. Ids kept between tournaments must be refreshed.                |
+| Real error codes                          | `400`, `403` and `503` (HTML, not JSON), all from the routed endpoint. `live/api.php` now returns 404.                                |
+| `{seasonId}_config.json` gone             | `config` and `hb` are not cached to disk on 3.0 and are routed-only.                                                                  |
+
+**Static files are on notice.** Live!'s own documentation calls them an internal cache rather than an interface, and deletes them once the event stops being publicly available. The routed endpoint is the stable one, but sends no CORS headers - so browser clients still have only the static files, and should expect them to vanish after the event.
 
 ### 1.9.17
 
@@ -55,14 +75,14 @@ Probed 2026-08-27. Values are read from each site's own `_heartbeat.json`. Seaso
 | **WBUC 2025**            | `wbuc.wfdf.sport`                     | **1.9.14** | `wbuc2025`  | `/live/data/`           |
 | WUCC 2026                | `results.wfdf.sport/wucc-2026`        | 3.0.6      | `WUCC2026`  | `/wucc-2026/live/data/` |
 
-Each spec has a reference deployment that every schema was checked against: **WBUC 2025** for 1.9.14, **WMUCC 2026** for 1.9.17. The 1.9.17 schemas were additionally cross-checked against WJUC 2026, EYUC 2026 and Elite Invite 2026.
+Each spec has a reference deployment that every schema was checked against: **WBUC 2025** for 1.9.14, **WMUCC 2026** for 1.9.17, **WUCC 2026** for 3.0.6. The 1.9.17 schemas were additionally cross-checked against WJUC 2026, EYUC 2026 and Elite Invite 2026.
 
 Five further deployments are known and unsupported - all five are readable, see [Legacy and unsupported deployments](#legacy-and-unsupported-deployments).
 
 ## Repository layout
 
-- `openapi-1.9.14.yaml`, `openapi-1.9.17.yaml` - the specifications, and the only files to edit by hand
-- `docs/openapi-1.9.14.json`, `docs/openapi-1.9.17.json` - generated by `just build`, **do not edit**
+- `openapi-1.9.14.yaml`, `openapi-1.9.17.yaml`, `openapi-3.0.6.yaml` - the specifications, and the only files to edit by hand
+- `docs/openapi-*.json` - generated by `just build`, **do not edit**
 - `docs/` - the GitHub Pages web root (branch `main`, folder `/docs`), served as-is
 
 `openapi-<version>.yaml` builds to `docs/openapi-<version>.json`, keeping the same name on both sides, so supporting another line means adding one file. `just versions` lists what is built.
@@ -86,7 +106,7 @@ just check      # fmt-check + build-check + validate, as CI would
 
 ## The API in one page
 
-Every event exposes the same set of static JSON files. Nothing is hardcoded - start at the heartbeat, which hands you the season id and base URL, then build the rest from it.
+Every event exposes the same set of static JSON files. Nothing is hardcoded - start at the heartbeat, which hands you the season id and base URL, then build the rest from it. The listing below is the 1.9 line; the two differences on 3.0 are marked.
 
 ```
 GET https://{host}/{prefix}/live/data/_heartbeat.json
@@ -105,12 +125,13 @@ GET {base}/{seasonId}_spirit_{seriesId}.json     division spirit leaderboard
 GET {base}/{seasonId}_players.json               index of every player id
 GET {base}/{seasonId}_statistics_{seriesId}.json division player leaderboard
 GET {base}/{seasonId}_statistics_top.json        event-wide single-game records
-GET {base}/{seasonId}_config.json                full deployment config + setting provenance
+GET {base}/{seasonId}_config.json                full deployment config + provenance  (1.9 only)
+GET {base}/{seasonId}_playerevents_{playerId}.json  one player's goals and assists     (3.0 only)
 ```
 
-There is **no per-player endpoint** on this line. The router has no route that takes a player id, and `_players_{id}.json` returns 404. `_players.json` gives nothing but ids; for names and numbers use `_teams_{teamId}.json` or `_statistics_{seriesId}.json`.
+**On 1.9 there is no per-player endpoint.** The router has no route taking a player id, and `_players_{id}.json` returns 404; `_players.json` gives nothing but ids. Use `_teams_{teamId}.json` or `_statistics_{seriesId}.json` instead. 3.0 adds `playerevents`, which is a real per-player scoring history.
 
-`_config.json` is a superset of the heartbeat's `config` block and is rarely what you want - the heartbeat is smaller and is what the front end actually reads. It is worth knowing about for `LIVE_ALLOWED_ENTITIES`, which lists the real server-side cache lifetimes.
+`_config.json` is a superset of the heartbeat's `config` block, worth knowing about for `LIVE_ALLOWED_ENTITIES` and its real cache lifetimes. **It does not exist on 3.0**, where `config` and `hb` are routed-only.
 
 ### Notes
 
@@ -118,7 +139,8 @@ There is **no per-player endpoint** on this line. The router has no route that t
   - The static files above send `Access-Control-Allow-Origin: *`
   - The dynamic `index.php?view=live/api&entity=…` endpoint returns byte-identical bodies but sends no CORS headers
   - Therefore it cannot be used from a browser on another origin
-  - Use the static files for most use cases
+  - On 1.9, use the static files for most use cases
+  - **On 3.0 neither route is complete**: the static files are deleted once the event stops being publicly available, and the routed endpoint still has no CORS. Server-side, use the routed endpoint; in a browser, expect the static files to vanish after the event
 - **Redirects**
   - Some tournaments live on their own subdomain
   - `results.wfdf.sport/wjuc-2026` 301s to `wjuc.wfdf.sport`, whose `STATIC_CACHE_BASE_URL` is `/live/data/` with no tournament prefix
@@ -130,8 +152,8 @@ There is **no per-player endpoint** on this line. The router has no route that t
   - Values are seconds elapsed since the game clock started, not clock times
   - Subtract `timer_paused_duration` to relate them to wall-clock
 - **Numeric strings are coerced to numbers**
-  - Except for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`
-  - This is why `games[].name` arrives as `"534"` rather than `534`
+  - Except for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`, plus `pools` on 3.0
+  - This is why `games[].name` arrives as `"534"` rather than `534`, and `games[].pools` as `"1016"`
 - **IDs are only unique within a season**
   - Their range is not predictable
   - A dedicated install (`wmucc.wfdf.sport`) numbers each season from 1
@@ -178,7 +200,7 @@ There is **no per-player endpoint** on this line. The router has no route that t
   - Likewise `_statistics.json` with no id resolves to series `0` and is always empty
 - **Some fields depend on the deployment, not on the Live! version**
   - `series[].slug` appears only for divisions listed in the install's own `LIVE_SERIES_SLUGS` map, which is empty by default
-  - `games[].ssdata`, `hasstarted` and `show_spirit` are extra `uo_game` columns on some installs, surfaced because the games query selects the whole row
+  - `games[].ssdata`, `hasstarted` and `show_spirit` are extra `uo_game` columns on some installs, surfaced because the games query selects the whole row - on 3.0 `hasstarted` and `show_spirit` are core fields rather than install quirks
   - Expect others this spec does not list, and never treat any of them as guaranteed by a release
 - **Not every entity becomes a static file**
   - `hb` and `wipe` are routed but were 404 as static files on every deployment checked
