@@ -16,7 +16,7 @@ Live! writes every response to a static JSON file and serves that. The dynamic e
 
 ## Version compatibility
 
-Live! is versioned independently of this spec and **the API is not stable across patch releases**. Check `app_version` in `_heartbeat.json` before trusting this document.
+Live! is versioned independently of this spec and **the API is not stable across patch releases**. Check `app_version` in `_heartbeat.json` before trusting this document - but check the response shape too where you can, since `app_version` is only a string in `package.json` and a deployment can drift from it, [as one already has](#known-deployments).
 
 There is one spec per **distinct response shape**, named for the earliest release that produces it, because the shapes differ enough that a single document would have to caveat almost every field.
 
@@ -62,20 +62,23 @@ Live! 3 runs on UltiOrganizer 4 and is a different API, not a revision of 1.9.
 
 ## Known deployments
 
-Probed 2026-08-27. Values are read from each site's own `_heartbeat.json`. Season id casing varies and must be used verbatim.
+Values are read from each site's own `_heartbeat.json` and `_reference.json`. Season id casing varies and must be used verbatim. Tournament date is `season.starttime`-`season.endtime`, both local dates inclusive - note `endtime` is midnight on the last day, not its end.
 
-| Event                    | Host                                  | Live!      | Season id   | Base path               |
-| ------------------------ | ------------------------------------- | ---------- | ----------- | ----------------------- |
-| WMUCC 2026               | `wmucc.wfdf.sport`                    | 1.9.17     | `wmucc2026` | `/live/data/`           |
-| WJUC 2026                | `wjuc.wfdf.sport`                     | 1.9.17     | `wjuc2026`  | `/live/data/`           |
-| EYUC U17 2026 Vienna     | `eyuc-schedule.ultimatefederation.eu` | 1.9.17     | `26EYUCVIE` | `/live/data/`           |
-| Elite Invite 2026 Leuven | `elite-invite.ultimatefederation.eu`  | 1.9.17     | `26ELITLEU` | `/live/data/`           |
-| EUIC 2026                | `euic-schedule.ultimatefederation.eu` | 1.9.16     | `euic2026`  | `/live/data/`           |
-| PAUC 2025                | `results.pauc.sport`                  | 1.9.15     | `pauc2025`  | `/live/data/`           |
-| **WBUC 2025**            | `wbuc.wfdf.sport`                     | **1.9.14** | `wbuc2025`  | `/live/data/`           |
-| WUCC 2026                | `results.wfdf.sport/wucc-2026`        | 3.0.6      | `WUCC2026`  | `/wucc-2026/live/data/` |
+| Event                    | Tournament start date | Host                                  | Live!   | Season id   | Base path               | Accessed   |
+| ------------------------ | --------------------- | ------------------------------------- | ------- | ----------- | ----------------------- | ---------- |
+| WMUCC 2026               | 2026-06-28            | `wmucc.wfdf.sport`                    | 1.9.17  | `wmucc2026` | `/live/data/`           | 2026-08-27 |
+| WJUC 2026                | 2026-07-11            | `wjuc.wfdf.sport`                     | 1.9.17  | `wjuc2026`  | `/live/data/`           | 2026-08-27 |
+| EYUC U17 2026 Vienna     | 2026-08-03            | `eyuc-schedule.ultimatefederation.eu` | 1.9.17  | `26EYUCVIE` | `/live/data/`           | 2026-08-27 |
+| Elite Invite 2026 Leuven | 2026-05-23            | `elite-invite.ultimatefederation.eu`  | 1.9.17  | `26ELITLEU` | `/live/data/`           | 2026-08-27 |
+| UKU Nationals 2026       | 2026-09-05            | `uku-schedule.ultimatefederation.eu`  | 1.9.17¹ | `26UKUNATS` | `/live/data/`           | 2026-09-01 |
+| EUIC 2026                | 2026-01-29            | `euic-schedule.ultimatefederation.eu` | 1.9.16  | `euic2026`  | `/live/data/`           | 2026-08-27 |
+| PAUC 2025                | 2025-12-01            | `results.pauc.sport`                  | 1.9.15  | `pauc2025`  | `/live/data/`           | 2026-08-27 |
+| WBUC 2025                | 2025-11-16            | `wbuc.wfdf.sport`                     | 1.9.14  | `wbuc2025`  | `/live/data/`           | 2026-08-27 |
+| WUCC 2026                | 2026-08-15            | `results.wfdf.sport/wucc-2026`        | 3.0.6   | `WUCC2026`  | `/wucc-2026/live/data/` | 2026-08-27 |
 
-Each spec has a reference deployment that every schema was checked against: **WBUC 2025** for 1.9.14, **WMUCC 2026** for 1.9.17, **WUCC 2026** for 3.0.6. The 1.9.17 schemas were additionally cross-checked against WJUC 2026, EYUC 2026 and Elite Invite 2026.
+Each spec has a reference deployment that every schema was checked against: **WBUC 2025** for 1.9.14, **WMUCC 2026** for 1.9.17, **WUCC 2026** for 3.0.6. The 1.9.17 schemas were additionally cross-checked against WJUC 2026, EYUC 2026, Elite Invite 2026 and UKU Nationals 2026.
+
+¹ UKU Nationals 2026's own heartbeat reports `app_version: 1.7.8`, which would place it below even the unsupported 1.8.x line - but every response matches 1.9.17 exactly: `teams[].reg_id` present, `games[].time_utc` present, `seed.sotg_token` gone. Checked against the plugin source (`live/api/ConstantsManager.php`), this is explained rather than coincidental - `app_version` is read straight from `live/package.json`'s `version` field on every request, with no link to which `api/*.php` is actually deployed, so a hand-patched install can serve current-generation shapes next to a stale version string. **Treat `app_version` as a hint, never a guarantee, and prefer the shape markers above when they disagree.** UKU Nationals 2026 is also the only deployment in this table probed before its event started (2026-09-05), so it is the one real-data confirmation this spec has for `status: "scheduled"` on both `season` and `games[]`.
 
 Five further deployments are known and unsupported - all five are readable, see [Legacy and unsupported deployments](#legacy-and-unsupported-deployments).
 
@@ -213,13 +216,13 @@ Five known deployments are outside the supported set. Probed 2026-08-27 and ever
 
 Their `app_version` values are build stamps or `dev` rather than releases, so none can be version-matched. The shape markers place all five on the **1.9.14–1.9.16** line: `seed.sotg_token` present, `teams[].reg_id` and `games[].time_utc` absent.
 
-| Event                                                                                   | `app_version`     | Season id   | Data base path           | Filenames  | CORS | Heartbeat            | What blocks it           |
-| --------------------------------------------------------------------------------------- | ----------------- | ----------- | ------------------------ | ---------- | ---- | -------------------- | ------------------------ |
-| [EBUCC 2025](https://live.ebucc.eu/live/data/reference.json)                            | `20250612.082841` | `ebucc2025` | `/live/data/`            | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
-| [EBUCC 2023](https://live.ebucc.eu/scores2023/live/data/reference.json)                 | `20250612.082841` | `EBUCC2023` | `/scores2023/live/data/` | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
-| [EUCF 2025 Wroclaw](https://eucf.ultimatefederation.eu/live/data/e2cf25_reference.json) | `1.8.2`           | `e2cf25`    | `/live/data/`            | prefixed   | `*`  | no `config` block    | season id undiscoverable |
-| [WBUCC 2024](https://live.wbucc.org/live/data/reference.json)                           | `20241019.151221` | _(none)_    | `/live/data/`            | unprefixed | none | embedded in the HTML | no CORS                  |
-| [WWUC 2025](https://results.wfdf.sport/wwuc/live/data/WWUC2025_reference.json)          | `dev`             | `WWUC2025`  | `/wwuc/live/data/`       | prefixed   | `*`  | full, with `config`  | `app_version` only       |
+| Event                                                                                   | Tournament start date | `app_version`     | Season id   | Data base path           | Filenames  | CORS | Heartbeat            | What blocks it           |
+| --------------------------------------------------------------------------------------- | --------------------- | ----------------- | ----------- | ------------------------ | ---------- | ---- | -------------------- | ------------------------ |
+| [EBUCC 2025](https://live.ebucc.eu/live/data/reference.json)                            | 2025-06-06            | `20250612.082841` | `ebucc2025` | `/live/data/`            | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
+| [EBUCC 2023](https://live.ebucc.eu/scores2023/live/data/reference.json)                 | 2023-06-09            | `20250612.082841` | `EBUCC2023` | `/scores2023/live/data/` | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
+| [EUCF 2025 Wroclaw](https://eucf.ultimatefederation.eu/live/data/e2cf25_reference.json) | 2025-09-26            | `1.8.2`           | `e2cf25`    | `/live/data/`            | prefixed   | `*`  | no `config` block    | season id undiscoverable |
+| [WBUCC 2024](https://live.wbucc.org/live/data/reference.json)                           | 2024-10-14            | `20241019.151221` | _(none)_    | `/live/data/`            | unprefixed | none | embedded in the HTML | no CORS                  |
+| [WWUC 2025](https://results.wfdf.sport/wwuc/live/data/WWUC2025_reference.json)          | 2025-09-18            | `dev`             | `WWUC2025`  | `/wwuc/live/data/`       | prefixed   | `*`  | full, with `config`  | `app_version` only       |
 
 EUCF 2025 and WBUCC 2024 serve a heartbeat with no `config` block, which is the same state the pre-1.9.17 bug in the [changelog](#1917) leaves a site in. Whether that is the cause here is unconfirmed: both run builds older than any release I have source for, so they may simply predate the feature. Either way the season id has to come from somewhere else - EUCF 2025's (`e2cf25`) is readable from `LIVE_SEASON_ID` in the SPA HTML at `/?view=live/index`.
 
