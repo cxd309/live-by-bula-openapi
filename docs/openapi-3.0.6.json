@@ -1564,10 +1564,10 @@
           },
           "club": {
             "type": [
-              "string",
+              "integer",
               "null"
             ],
-            "description": "Owning club. Null in every row checked at a national-teams event; expect a value at a club event."
+            "description": "Owning club id, joining to `uo_club` (not otherwise exposed by this API). Null at a national-teams event; expect a value at a club event."
           }
         }
       },
@@ -1584,7 +1584,7 @@
         "properties": {
           "country_id": {
             "type": "integer",
-            "description": "An **integer** on 3.0; the 1.9 line sent this as a numeric string in some responses. From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.\n\nThe one exception is `-1`, a synthetic id for teams with no country of their own and none inheritable from a club. Its row is `{ \"country_id\": -1, \"name\": \"Unknown\", \"abbreviation\": \"UNK\", \"flagfile\": null }`.\n",
+            "description": "From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.\n\nThe one exception is `-1`, a synthetic id for teams with no country of their own and none inheritable from a club. Its row is `{ \"country_id\": -1, \"name\": \"Unknown\", \"abbreviation\": \"UNK\", \"flagfile\": null }`.\n",
             "examples": [
               1011,
               -1
@@ -1957,10 +1957,10 @@
           },
           "club": {
             "type": [
-              "string",
+              "integer",
               "null"
             ],
-            "description": "Null at a national-teams event."
+            "description": "Owning club id, joining to `uo_club` (not otherwise exposed by this API). Null at a national-teams event."
           },
           "clubname": {
             "type": [
@@ -2138,9 +2138,10 @@
           },
           "club": {
             "type": [
-              "string",
+              "integer",
               "null"
-            ]
+            ],
+            "description": "Owning club id, joining to `uo_club` (not otherwise exposed by this API)."
           },
           "clubname": {
             "type": [
@@ -2153,10 +2154,12 @@
       "TeamRecord": {
         "type": "object",
         "title": "TeamRecord",
-        "description": "Win/loss record. Only `games` and `wins` are sent by most deployments; `draws` and `losses` were seen on one, so derive losses as `games - wins` rather than relying on the field.",
+        "description": "Win/loss record. `TeamStats()` (`ultiorganizer/lib/team.functions.php`) computes all four fields as SQL `COUNT()` aggregates, unlike on 1.9 where only `games` and `wins` are computed - so `draws` and `losses` are real and always present here, not deployment-dependent.\n",
         "required": [
           "games",
-          "wins"
+          "wins",
+          "draws",
+          "losses"
         ],
         "properties": {
           "games": {
@@ -2173,14 +2176,12 @@
           },
           "draws": {
             "type": "integer",
-            "description": "Sent by some deployments only.",
             "examples": [
               0
             ]
           },
           "losses": {
             "type": "integer",
-            "description": "Sent by some deployments only.",
             "examples": [
               6
             ]
@@ -2190,7 +2191,7 @@
       "TeamPoints": {
         "type": "object",
         "title": "TeamPoints",
-        "description": "Goals for and against, plus the team's spirit total.",
+        "description": "Goals for and against. `TeamPoints()` (`ultiorganizer/lib/team.functions.php`) computes only `team_id`, `scores` and `against` on 3.0 - unlike on 1.9, it no longer computes a `spirit` sum at all, so this object never carries a bare `spirit` field. `spiritavg` is added separately, and only when the event publishes spirit points.\n",
         "required": [
           "team_id",
           "scores",
@@ -2217,16 +2218,9 @@
               120
             ]
           },
-          "spirit": {
-            "type": "integer",
-            "description": "Total spirit points received. Present only when the event publishes spirit points.",
-            "examples": [
-              138
-            ]
-          },
           "spiritavg": {
             "type": "number",
-            "description": "Spirit points per game, to two decimal places.",
+            "description": "Spirit points per game, to two decimal places. Present only when the event publishes spirit points.",
             "examples": [
               10.62
             ]
@@ -2482,7 +2476,7 @@
       "Game": {
         "type": "object",
         "title": "Game",
-        "description": "One game as it appears in the games list: scheduling, scores and status, with no per-goal detail.\n\n**Read the absence of a field carefully.** Every `null`, `0`, `\"0\"` and `false` is stripped from this object before it is sent, so `valid` present means `1` and `valid` absent means `0`. Empty strings are not stripped. `homescore` and `visitorscore` are the exception - they are restored to `0` for any game that is not `scheduled`.\n\nFour fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.\n\n**The whole game row is selected, so a deployment whose UltiOrganizer carries extra columns will send them here.** Three such fields are described at the end of this schema; they come from the install underneath rather than from Live!, so treat any of them as optional and expect others this document does not list.\n",
+        "description": "One game as it appears in the games list: scheduling, scores and status, with no per-goal detail.\n\n**Read the absence of a field carefully.** Every `null`, `0`, `\"0\"` and `false` is stripped from this object before it is sent, so `valid` present means `1` and `valid` absent means `0`. Empty strings are not stripped. `homescore` and `visitorscore` are the exception - they are restored to `0` for any game that is not `scheduled`.\n\nFour fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.\n\n**The whole game row is selected**, so an install whose underlying `uo_game` table has been extended beyond what this document lists will send those extra columns too. This document only specifies Live!'s own fields.\n",
         "required": [
           "game_id",
           "hometeam",
@@ -2686,13 +2680,6 @@
             "examples": [
               1039
             ]
-          },
-          "ssdata": {
-            "type": "string",
-            "description": "Streaming metadata, as a **JSON document encoded inside a string** - parse it a second time to read it. Observed keys are `is_streamed`, `event_name`, `venue`, `delay`, `scoreboard`, `game_duration_scoreboard`, `game_duration_scheduling` and `labels`.\n\nNot a Live! field. It comes from an extra `uo_game` column present on some UltiOrganizer installs rather than from this release, and was not sent by the 3.0 deployment sampled. Treat it as optional and install-dependent.\n",
-            "examples": [
-              "{\"is_streamed\":true,\"event_name\":\"FRA (WMN) - HUN (WMN)\",\"venue\":32,\"delay\":60}"
-            ]
           }
         }
       },
@@ -2888,10 +2875,8 @@
           },
           "mediaevents": {
             "type": "array",
-            "description": "Media timeouts. Empty in every response checked.",
-            "items": {
-              "$ref": "#/components/schemas/GameEvent"
-            }
+            "description": "Media timeouts. Empty in every response checked, so this shape is unconfirmed rather than verified.\n\n`GameMediaEvents()` (`ultiorganizer/lib/game.functions.php`) is a **different query** from the one behind `gameevents`, not a filtered view of it - it selects `time`, `ishome`, `type` aliased as `eventtype` rather than `type`, plus `info` and every column of `uo_urls`. Not documented as its own schema since it has never been observed populated.\n",
+            "items": {}
           },
           "homecaptain": {
             "type": "integer",
@@ -3743,7 +3728,7 @@
       "GameEvent": {
         "type": "object",
         "title": "GameEvent",
-        "description": "A non-scoring event. Timeouts are merged in from a separate table and reported with `type: \"timeout\"`.",
+        "description": "A non-scoring event, backing `gameevents`. Timeouts and spirit timeouts are merged in from separate tables and reported with `type: \"timeout\"` / `type: \"spirit_timeout\"` - the latter is new on 3.0.\n\n`GameEvents()` (`ultiorganizer/lib/game.functions.php`) selects exactly these three columns - there is no fourth, and in particular no free-text field here.\n",
         "required": [
           "time",
           "ishome",
@@ -3766,15 +3751,9 @@
             "description": "`offence` marks which team started on offence, so it usually appears once at `time: 0`. `media` events are filtered out of this list and returned in `mediaevents`.",
             "examples": [
               "offence",
-              "timeout"
+              "timeout",
+              "spirit_timeout"
             ]
-          },
-          "info": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Free text attached to the event."
           }
         }
       },

@@ -1170,8 +1170,8 @@ components:
           type: [integer, "null"]
           description: Live seeding. Null in every row checked at this event, so treat it as unused here. Note the team-detail endpoint's `seed.activerank` is populated.
         club:
-          type: [string, "null"]
-          description: Owning club. Null in every row checked at a national-teams event; expect a value at a club event.
+          type: [integer, "null"]
+          description: Owning club id, joining to `uo_club` (not otherwise exposed by this API). Null at a national-teams event; expect a value at a club event.
 
     Country:
       type: object
@@ -1185,7 +1185,7 @@ components:
         country_id:
           type: integer
           description: |
-            An **integer** on 3.0; the 1.9 line sent this as a numeric string in some responses. From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.
+            From a shared table, so unlike every other id in this API it is stable across events and sits in the 1000s.
 
             The one exception is `-1`, a synthetic id for teams with no country of their own and none inheritable from a club. Its row is `{ "country_id": -1, "name": "Unknown", "abbreviation": "UNK", "flagfile": null }`.
           examples: [1011, -1]
@@ -1399,8 +1399,8 @@ components:
           description: Filename only. Prefix with `config.FLAG_FILES_BASE_URL`.
           examples: ["Australia.png"]
         club:
-          type: [string, "null"]
-          description: Null at a national-teams event.
+          type: [integer, "null"]
+          description: Owning club id, joining to `uo_club` (not otherwise exposed by this API). Null at a national-teams event.
         clubname:
           type: [string, "null"]
           description: Null at a national-teams event.
@@ -1508,15 +1508,17 @@ components:
         valid:
           $ref: "#/components/schemas/IntBool"
         club:
-          type: [string, "null"]
+          type: [integer, "null"]
+          description: Owning club id, joining to `uo_club` (not otherwise exposed by this API).
         clubname:
           type: [string, "null"]
 
     TeamRecord:
       type: object
       title: TeamRecord
-      description: Win/loss record. Only `games` and `wins` are sent by most deployments; `draws` and `losses` were seen on one, so derive losses as `games - wins` rather than relying on the field.
-      required: [games, wins]
+      description: |
+        Win/loss record. `TeamStats()` (`ultiorganizer/lib/team.functions.php`) computes all four fields as SQL `COUNT()` aggregates, unlike on 1.9 where only `games` and `wins` are computed - so `draws` and `losses` are real and always present here, not deployment-dependent.
+      required: [games, wins, draws, losses]
       properties:
         games:
           type: integer
@@ -1526,17 +1528,16 @@ components:
           examples: [7]
         draws:
           type: integer
-          description: Sent by some deployments only.
           examples: [0]
         losses:
           type: integer
-          description: Sent by some deployments only.
           examples: [6]
 
     TeamPoints:
       type: object
       title: TeamPoints
-      description: Goals for and against, plus the team's spirit total.
+      description: |
+        Goals for and against. `TeamPoints()` (`ultiorganizer/lib/team.functions.php`) computes only `team_id`, `scores` and `against` on 3.0 - unlike on 1.9, it no longer computes a `spirit` sum at all, so this object never carries a bare `spirit` field. `spiritavg` is added separately, and only when the event publishes spirit points.
       required: [team_id, scores, against]
       properties:
         team_id:
@@ -1550,13 +1551,9 @@ components:
           type: integer
           description: Goals conceded.
           examples: [120]
-        spirit:
-          type: integer
-          description: Total spirit points received. Present only when the event publishes spirit points.
-          examples: [138]
         spiritavg:
           type: number
-          description: Spirit points per game, to two decimal places.
+          description: Spirit points per game, to two decimal places. Present only when the event publishes spirit points.
           examples: [10.62]
 
     TeamSpiritGame:
@@ -1722,7 +1719,7 @@ components:
 
         Four fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.
 
-        **The whole game row is selected, so a deployment whose UltiOrganizer carries extra columns will send them here.** Three such fields are described at the end of this schema; they come from the install underneath rather than from Live!, so treat any of them as optional and expect others this document does not list.
+        **The whole game row is selected**, so an install whose underlying `uo_game` table has been extended beyond what this document lists will send those extra columns too. This document only specifies Live!'s own fields.
       required: [game_id, hometeam, visitorteam, pool, time, status]
       properties:
         game_id:
@@ -1849,15 +1846,6 @@ components:
           type: integer
           description: The pool the away placeholder draws from. New in 3.0.
           examples: [1039]
-        ssdata:
-          type: string
-          description: |
-            Streaming metadata, as a **JSON document encoded inside a string** - parse it a second time to read it. Observed keys are `is_streamed`, `event_name`, `venue`, `delay`, `scoreboard`, `game_duration_scoreboard`, `game_duration_scheduling` and `labels`.
-
-            Not a Live! field. It comes from an extra `uo_game` column present on some UltiOrganizer installs rather than from this release, and was not sent by the 3.0 deployment sampled. Treat it as optional and install-dependent.
-          examples: [
-            "{\"is_streamed\":true,\"event_name\":\"FRA (WMN) - HUN (WMN)\",\"venue\":32,\"delay\":60}",
-          ]
 
     ActiveGame:
       title: ActiveGame
@@ -1982,9 +1970,11 @@ components:
             $ref: "#/components/schemas/GameEvent"
         mediaevents:
           type: array
-          description: Media timeouts. Empty in every response checked.
-          items:
-            $ref: "#/components/schemas/GameEvent"
+          description: |
+            Media timeouts. Empty in every response checked, so this shape is unconfirmed rather than verified.
+
+            `GameMediaEvents()` (`ultiorganizer/lib/game.functions.php`) is a **different query** from the one behind `gameevents`, not a filtered view of it - it selects `time`, `ishome`, `type` aliased as `eventtype` rather than `type`, plus `info` and every column of `uo_urls`. Not documented as its own schema since it has never been observed populated.
+          items: {}
         homecaptain:
           type: integer
           description: Player id of the home captain, or `-1` when none is recorded - which is the common case. Not an object, and not a jersey number.
@@ -2412,7 +2402,10 @@ components:
     GameEvent:
       type: object
       title: GameEvent
-      description: 'A non-scoring event. Timeouts are merged in from a separate table and reported with `type: "timeout"`.'
+      description: |
+        A non-scoring event, backing `gameevents`. Timeouts and spirit timeouts are merged in from separate tables and reported with `type: "timeout"` / `type: "spirit_timeout"` - the latter is new on 3.0.
+
+        `GameEvents()` (`ultiorganizer/lib/game.functions.php`) selects exactly these three columns - there is no fourth, and in particular no free-text field here.
       required: [time, ishome, type]
       properties:
         time:
@@ -2425,10 +2418,7 @@ components:
         type:
           type: string
           description: "`offence` marks which team started on offence, so it usually appears once at `time: 0`. `media` events are filtered out of this list and returned in `mediaevents`."
-          examples: ["offence", "timeout"]
-        info:
-          type: [string, "null"]
-          description: Free text attached to the event.
+          examples: ["offence", "timeout", "spirit_timeout"]
 
     GameScoreboardPlayer:
       type: object

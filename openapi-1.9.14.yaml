@@ -19,9 +19,7 @@ info:
 
     ## Which deployments this covers
 
-    This document describes **Live! 1.9.14**. The response shapes are identical on **1.9.15** and **1.9.16**: `live/api/` is byte-for-byte the same between 1.9.14 and 1.9.15, and 1.9.16 changes one line of `ConfigManager.php` that alters a configuration *value* rather than any response shape. Check `app_version` in `_heartbeat.json` before trusting this document.
-
-    **1.9.17 is not covered.** It adds `teams[].reg_id` and `games[].time_utc`, removes `seed.sotg_token`, and fixes the heartbeat behaviour described below. Use the 1.9.17 specification for those deployments.
+    This document describes **Live! 1.9.14 through 1.9.17**. It may also cover other 1.9.xx versions but this has not been confirmed.
 
     ## Scope
 
@@ -47,7 +45,7 @@ info:
 servers:
   - url: "{origin}{basePath}"
     description: |
-      Any Live! 1.9.14 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WBUC 2025 deployment.
+      Any Live! 1.9.14-1.9.17 deployment. Read both parts from `_heartbeat.json` rather than assuming them, and resolve them against the final response URL after any redirect. The defaults below are the WBUC 2025 deployment.
     variables:
       origin:
         default: https://wbuc.wfdf.sport
@@ -192,7 +190,7 @@ paths:
 
         Because of that stripping, the absence of `isongoing` is how you tell a game is not live; `status` is the field to read instead.
 
-        `visitorsotg` is present here - the opponent's spirit score for the game - while `homesotg` is stripped. Do not read anything into the asymmetry; the field is not deliberately published.
+        `visitorsotg` is present here - the opponent's spirit score for the game - while `homesotg` is stripped. This looks like a genuine bug in `GameManager.php`'s strip list, which names a `awaysotg` key that doesn't exist rather than `visitorsotg`.
 
         Dynamic entity: `games`. Cache lifetime varies from 1.5 minutes during the event to 60 minutes more than 72 hours either side of it.
       responses:
@@ -665,7 +663,10 @@ components:
           examples: ["1"]
         UO_URL_PREFIX:
           type: string
-          description: Path prefix of the UltiOrganizer install this Live! instance sits in.
+          description: |
+            Path prefix of the UltiOrganizer install this Live! instance sits in.
+
+            **Hardcoded to `/` on 1.9.16 and older**, regardless of the install's real prefix - a one-line bug fixed in 1.9.17, which reports the true value instead. Not known to have affected any deployment checked, since none run off-root, but a client relying on this field to build UltiOrganizer-side URLs should not trust it before 1.9.17.
           examples: ["/"]
         FLAG_FILES_BASE_URL:
           type: string
@@ -722,7 +723,7 @@ components:
       type: object
       title: Season
       description: |
-        The event itself. Most fields come straight from UltiOrganizer's season row, so which of the optional ones appear depends on the UltiOrganizer version underneath rather than on the Live! version. The required list below was present on every deployment checked.
+        The event itself. `ReferenceData.php` selects the whole `uo_season` row and strips seven columns before returning it, so every field below other than the derived ones is one of `uo_season`'s columns.
 
         Seven fields are deliberately withheld: `enrollopen`, `enroll_deadline`, `istournament`, `organizer`, `category`, `showspiritpoints` and `spiritpoints`. The last two are folded into the derived `spirit` field instead.
       required: [
@@ -806,7 +807,10 @@ components:
           description: When `0`, every `comments` field in the API is `null`.
         reg_id:
           type: [integer, "null"]
-          description: The event's id in the organiser's registration system. Often `0`, and explicitly `null` on some deployments.
+          description: |
+            The event's id in the organiser's registration system. Often `0`, and explicitly `null` on some deployments.
+
+            Not declared in the shipped `uo_season` table definition, unlike every other field here - but written by `UPDATE uo_season SET reg_id = ...` in `ultiorganizer/plugins/import_db_reg_2024_teams.php`, so it is a real column the shipped schema files just don't capture, the same gap as `uo_team.reg_id` below.
           examples: [0]
         iscurrent:
           $ref: "#/components/schemas/IntBool"
@@ -815,32 +819,6 @@ components:
           description: Whether teams represent countries. When `1`, `country` and `flagfile` are meaningful.
         isnationalteams:
           $ref: "#/components/schemas/IntBool"
-        api_public:
-          $ref: "#/components/schemas/IntBool"
-        event_readonly:
-          $ref: "#/components/schemas/IntBool"
-        hide_time_on_scoresheet:
-          $ref: "#/components/schemas/IntBool"
-        hometeammode:
-          $ref: "#/components/schemas/IntBool"
-        lockteamspiritonsubmit:
-          $ref: "#/components/schemas/IntBool"
-        maintenance_mode:
-          $ref: "#/components/schemas/IntBool"
-        public_event:
-          $ref: "#/components/schemas/IntBool"
-        showgamecomments:
-          $ref: "#/components/schemas/IntBool"
-        showspiritcommentstoteams:
-          $ref: "#/components/schemas/IntBool"
-        showspiritpointsonlyoncomplete:
-          $ref: "#/components/schemas/IntBool"
-        use_season_points:
-          $ref: "#/components/schemas/IntBool"
-        spiritmode:
-          type: integer
-          description: Which spirit scoring scheme is in use. An id, not a count.
-          examples: [1003]
 
     Series:
       type: object
@@ -863,7 +841,7 @@ components:
           description: |
             A short URL-friendly name for the division, added only for series listed in the deployment's own `LIVE_SERIES_SLUGS` map. That map is empty by default, so most deployments omit this field entirely, and one that sets it will carry `slug` on some series and not others.
 
-            Absent on all three in-range deployments checked (1.9.14, 1.9.15, 1.9.16) and seen only on installs reporting a non-semver `app_version`. Treat it as optional and never key off it.
+            Absent on every in-range deployment checked, across both 1.9.14-1.9.16 and 1.9.17, and seen only on installs reporting a non-semver `app_version`. Treat it as optional and never key off it.
           examples: ["GGM"]
 
     Pool:
@@ -948,7 +926,7 @@ components:
           examples: [7]
         reg_id:
           type: integer
-          description: The team's id in the organiser's registration system. Present here on 1.9.14, unlike on the teams endpoint.
+          description: The team's id in the organiser's registration system. Present here throughout; from 1.9.17 the teams endpoint carries it too, so the two agree - on 1.9.16 and older it appeared only here.
           examples: [10]
         final_standing:
           type: integer
@@ -962,8 +940,8 @@ components:
           type: [integer, "null"]
           description: Live seeding. Null in every row checked at this event, so treat it as unused here. Note the team-detail endpoint's `seed.activerank` is populated.
         club:
-          type: [string, "null"]
-          description: Owning club. Null in every row checked at a national-teams event; expect a value at a club event.
+          type: [integer, "null"]
+          description: Owning club id, joining to `uo_club` (not otherwise exposed by this API). Null at a national-teams event; expect a value at a club event.
 
     Country:
       type: object
@@ -991,7 +969,7 @@ components:
       type: object
       title: Reservation
       description: A playing field on a given day. Games reference these by `reservation` id.
-      required: [id, fieldname, reservationgroup]
+      required: [id, fieldname, reservationgroup, location]
       properties:
         id:
           type: integer
@@ -1006,8 +984,8 @@ components:
           description: The day this field is booked for.
           examples: ["Sunday", "Thursday"]
         location:
-          type: [integer, "null"]
-          description: Venue id, or `0` where the event uses a single unnamed site.
+          type: integer
+          description: Venue id, or `0` where the event uses a single unnamed site. `NOT NULL` in `uo_reservation`, so never actually absent or null - only `name` can be.
           examples: [0]
         name:
           type: [string, "null"]
@@ -1034,7 +1012,7 @@ components:
       description: |
         A team's aggregate record across the event. Identity fields duplicate `ReferenceTeam`; the rest are results.
 
-        Every field here is assembled explicitly rather than passed through from the database, so the set is fixed: all seventeen properties below appeared on all 136 teams at the event sampled, and nothing else did.
+        Every field here is assembled explicitly rather than passed through from the database, so the set is fixed: all seventeen properties below appeared on all 136 teams at the event sampled, and nothing else did - eighteen from 1.9.17, which adds `reg_id`.
       required: [
         team_id,
         name,
@@ -1059,6 +1037,13 @@ components:
         name:
           type: string
           examples: ["Australia"]
+        reg_id:
+          type: [integer, "null"]
+          description: |
+            The team's id in the organiser's registration system. **New in 1.9.17** - absent entirely on 1.9.16 and older.
+
+            Always present from 1.9.17, but explicitly `null` where the team has none, rather than being omitted the way most unset fields in this API are. The same value appears as `seed.reg_id` in the team-detail response.
+          examples: [12]
         series:
           type: integer
           description: Division id.
@@ -1135,6 +1120,11 @@ components:
         name:
           type: string
           examples: ["Australia"]
+        reg_id:
+          type: [integer, "null"]
+          description: |
+            The team's id in the organiser's registration system. `TeamInfo()` selects `team.reg_id` directly onto this object, distinct from the same value nested at `seed.reg_id` (from `TeamFullInfo()`'s separate whole-row query) - the two agree.
+          examples: [10]
         abbreviation:
           type: string
           examples: ["AUS"]
@@ -1177,8 +1167,8 @@ components:
           description: Filename only. Prefix with `config.FLAG_FILES_BASE_URL`.
           examples: ["Australia.png"]
         club:
-          type: [string, "null"]
-          description: Null at a national-teams event.
+          type: [integer, "null"]
+          description: Owning club id, joining to `uo_club` (not otherwise exposed by this API). Null at a national-teams event.
         clubname:
           type: [string, "null"]
           description: Null at a national-teams event.
@@ -1277,7 +1267,8 @@ components:
         valid:
           $ref: "#/components/schemas/IntBool"
         club:
-          type: [string, "null"]
+          type: [integer, "null"]
+          description: Owning club id, joining to `uo_club` (not otherwise exposed by this API).
         clubname:
           type: [string, "null"]
         sotg_token:
@@ -1289,7 +1280,8 @@ components:
     TeamRecord:
       type: object
       title: TeamRecord
-      description: Win/loss record. Only `games` and `wins` are sent by most deployments; `draws` and `losses` were seen on one, so derive losses as `games - wins` rather than relying on the field.
+      description: |
+        Win/loss record. `TeamStats()` (`ultiorganizer/lib/team.functions.php`) computes exactly these two fields by SQL aggregate - there is no stored `losses` or `draws` column or query anywhere in source, so derive losses as `games - wins` rather than expecting either field.
       required: [games, wins]
       properties:
         games:
@@ -1298,20 +1290,12 @@ components:
         wins:
           type: integer
           examples: [7]
-        draws:
-          type: integer
-          description: Sent by some deployments only.
-          examples: [0]
-        losses:
-          type: integer
-          description: Sent by some deployments only.
-          examples: [6]
 
     TeamPoints:
       type: object
       title: TeamPoints
-      description: Goals for and against, plus the team's spirit total.
-      required: [team_id, scores, against]
+      description: Goals for and against, plus the team's spirit total. Only used nested in `TeamDetailResponse.points` - `TeamsResponse` pulls its own `for`/`against` from the same underlying `TeamPoints()` call but doesn't nest the object itself.
+      required: [team_id, scores, against, spirit]
       properties:
         team_id:
           type: integer
@@ -1326,7 +1310,8 @@ components:
           examples: [120]
         spirit:
           type: integer
-          description: Total spirit points received. Present only when the event publishes spirit points.
+          description: |
+            Total spirit points received. `TeamPoints()` (`ultiorganizer/lib/team.functions.php`) always computes this as a `SUM(...)` wrapped in `COALESCE(...,0)`, unconditionally - unlike `spiritavg` below, it does **not** depend on whether the event publishes spirit points, and is `0` rather than absent when there is none.
           examples: [138]
         spiritavg:
           type: number
@@ -1381,18 +1366,6 @@ components:
           type: string
           description: Always present in `spiritreceived`, and names the **opponent**. Where it also appears in `spiritgiven` it repeats the same opponent name.
           examples: ["Lebanon"]
-        time:
-          type: string
-          description: When the score was submitted, tournament-local. Sent by some deployments only.
-          examples: ["2025-11-18 12:50:00"]
-        spiritmode:
-          type: integer
-          description: Scoring scheme id, matching `season.spiritmode`. Sent by some deployments only.
-          examples: [1003]
-        is_complete:
-          $ref: "#/components/schemas/IntBool"
-        is_visible:
-          $ref: "#/components/schemas/IntBool"
 
     GamesResponse:
       type: object
@@ -1429,6 +1402,8 @@ components:
         **Read the absence of a field carefully.** Every `null`, `0`, `"0"` and `false` is stripped from this object before it is sent, so `valid` present means `1` and `valid` absent means `0`. Empty strings are not stripped. `homescore` and `visitorscore` are the exception - they are restored to `0` for any game that is not `scheduled`.
 
         Four fields describe the game's name and are easily confused. `name` is the scheduling-name id, delivered as a **string** because `name` is exempt from numeric coercion. `gamename` and `gameschedulingname` both resolve that id to its label and hold the same value. `homeschedulingname` and `visitorschedulingname` are the placeholder labels for the two slots, like `4A` and `5B`.
+
+        **The whole game row is selected**, so an install whose underlying `uo_game` table has been extended beyond what this document lists will send those extra columns too. This document only specifies Live!'s own fields.
       required: [game_id, hometeam, visitorteam, pool, time, status]
       properties:
         game_id:
@@ -1456,8 +1431,17 @@ components:
           examples: ["completed"]
         time:
           type: string
-          description: Scheduled start, tournament-local. Absent for an unscheduled game. There is no `time_utc` on this line; it is added in 1.9.17.
+          description: Scheduled start, tournament-local. Absent for an unscheduled game.
           examples: ["2025-11-17 11:15:00"]
+        time_utc:
+          type: string
+          description: |
+            The same instant as `time`, converted to UTC. **New in 1.9.17** - absent on 1.9.16 and older.
+
+            Prefer this over combining `time` with `season.utcOffset`: it is computed per game against `season.timezone`, so it handles a daylight-saving change during the event, which the single fixed offset cannot. Same `YYYY-MM-DD HH:MM:SS` format, with no zone marker despite being UTC.
+
+            Added after the falsy stripping described above, so it is never removed for being empty. It is omitted for a game with no `time`, and for every game if the season's timezone is missing or not a recognised IANA name.
+          examples: ["2026-07-02 16:00:00"]
         pool:
           type: integer
           description: Joins to `pools[].pool_id`.
@@ -1473,21 +1457,28 @@ components:
           type: integer
           description: Seconds from the start of the game to halftime. Absent when halftime has not been recorded.
           examples: [1700]
-        timer_start:
+        isongoing:
+          $ref: "#/components/schemas/IntBool"
+          description: Whether the game is currently live, as recorded by the install rather than derived. Absent rather than `0` when not ongoing, so its presence - not `status` - is how a client should key off "live now". `status` is still the field to read for the three-way scheduled/ongoing/completed distinction.
+        timeslot:
           type: integer
-          description: Unix seconds at which the game clock was started. The basis for elapsed time, since in-game `time` values count from here.
-          examples: [1763378101]
-        timer_pause_start:
+          description: Per-game override of the pool's `timeslot`. Absent when the game uses its pool's default.
+          examples: [60]
+        defenses_total:
           type: integer
-          description: Unix seconds at which the clock was paused, absent when it is running.
-        timer_paused_duration:
+          description: Combined blocks by both teams, when the event records defensive stats. Absent otherwise.
+          examples: [0]
+        homedefenses:
           type: integer
-          description: Total seconds the clock has spent paused. Subtract when converting an in-game `time` to a wall-clock time.
-          examples: [1140]
+          description: Blocks by the home team, when the event records defensive stats.
+          examples: [0]
+        visitordefenses:
+          type: integer
+          examples: [0]
         visitorsotg:
           type: integer
           description: |
-            Spirit points the away team received for this game, out of 20. Its home counterpart is stripped from this endpoint, so use the team-detail or spirit endpoints for a matched pair.
+            Spirit points the away team received for this game, out of 20. Its home counterpart, `homesotg`, is stripped from this endpoint - `visitorsotg` survives by what reads like a genuine bug in `GameManager.php`: the strip list names `awaysotg`, not `visitorsotg`, and no such column exists, so it's a no-op. Use the team-detail or spirit endpoints for a matched pair regardless.
           examples: [12]
         islive:
           $ref: "#/components/schemas/IntBool"
@@ -1646,9 +1637,11 @@ components:
             $ref: "#/components/schemas/GameEvent"
         mediaevents:
           type: array
-          description: Media timeouts. Empty in every response checked.
-          items:
-            $ref: "#/components/schemas/GameEvent"
+          description: |
+            Media timeouts. Empty in every response checked, so this shape is unconfirmed rather than verified.
+
+            `GameMediaEvents()` (`ultiorganizer/lib/game.functions.php`) is a **different query** from the one behind `gameevents`, not a filtered view of it - it selects `time`, `ishome`, `type` aliased as `eventtype` rather than `type`, plus `info` and every column of `uo_urls`. Not documented as its own schema since it has never been observed populated.
+          items: {}
         homecaptain:
           type: integer
           description: Player id of the home captain, or `-1` when none is recorded - which is the common case. Not an object, and not a jersey number.
@@ -1741,6 +1734,9 @@ components:
           description: Person responsible for scorekeeping.
         timeslot:
           type: [integer, "null"]
+        defenses_total:
+          type: [integer, "null"]
+          description: Combined blocks by both teams, when the event records defensive stats.
         homedefenses:
           type: [integer, "null"]
           description: Blocks by the home team, when the event records defensive stats.
@@ -1752,15 +1748,6 @@ components:
           $ref: "#/components/schemas/IntBool"
         liveurl:
           type: [string, "null"]
-        timer_start:
-          type: [integer, "null"]
-          description: Unix seconds at which the game clock was started.
-          examples: [1763378101]
-        timer_pause_start:
-          type: [integer, "null"]
-        timer_paused_duration:
-          type: [integer, "null"]
-          examples: [0]
         scheduling_name_home:
           type: [integer, "null"]
         scheduling_name_visitor:
@@ -1987,13 +1974,8 @@ components:
           examples: [0]
         time:
           type: [integer, "null"]
-          description: Seconds from the start of the game, not a clock time. Subtract `timer_paused_duration` to relate it to wall-clock.
+          description: Seconds from the start of the game, not a clock time. There is no stored game-clock start or pause state on this line to relate it back to wall-clock with - that is a 3.0-only addition.
           examples: [245]
-        timestamp:
-          type: string
-          description: |
-            When the goal was entered, tournament-local. This is the scorekeeper's entry time, which may be well after the game - at the event sampled some rows were recorded three days later - so do not use it as the time of the goal.
-          examples: ["2025-11-20 08:43:40"]
         scorer:
           type: [integer, "null"]
           description: Player id, or `0` when the scorer was not recorded.
@@ -2037,7 +2019,10 @@ components:
     GameEvent:
       type: object
       title: GameEvent
-      description: 'A non-scoring event. Timeouts are merged in from a separate table and reported with `type: "timeout"`.'
+      description: |
+        A non-scoring event, backing `gameevents`. Timeouts are merged in from a separate table and reported with `type: "timeout"`.
+
+        `GameEvents()` (`ultiorganizer/lib/game.functions.php`) selects exactly these three columns - there is no fourth, and in particular no free-text field here.
       required: [time, ishome, type]
       properties:
         time:
@@ -2051,9 +2036,6 @@ components:
           type: string
           description: "`offence` marks which team started on offence, so it usually appears once at `time: 0`. `media` events are filtered out of this list and returned in `mediaevents`."
           examples: ["offence", "timeout"]
-        info:
-          type: [string, "null"]
-          description: Free text attached to the event.
 
     GameScoreboardPlayer:
       type: object
