@@ -1,12 +1,12 @@
-# live-by-bula-openapi
+# Live! by BULA openapi
 
-An unofficial [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) specification for the **Live! JSON API** - the feeds behind [Live! by BULA](https://beachultimate.org/livebybula/), the public results interface used by recent WFDF, EUC and BULA ultimate events.
+An unofficial [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) specification for the [Live! by BULA](https://beachultimate.org/livebybula/) JSON API, the public results interface used by recent WFDF, EUC and BULA ultimate events.
 
 Presented with Swagger UI and ReDoc.
 
 **[Browse the documentation](https://cxd309.github.io/live-by-bula-openapi/)**
 
-> Unofficial. Derived from the published Live! source and verified field by field against live deployments. Live! by BULA is © BULA Ltd. [UltiOrganizer](https://github.com/ktolonen/ultiorganizer) is a separate project. Neither has published, endorsed or reviewed this specification, and the API may break without warning.
+> Unofficial. Derived from the published Live! and UltiOrganizer source, PHP included. Live! by BULA is © BULA Ltd. [UltiOrganizer](https://github.com/ktolonen/ultiorganizer) is a separate project. Neither has published, endorsed or reviewed this specification, and the API may break without warning.
 
 ## What this API actually is
 
@@ -16,17 +16,18 @@ Live! writes every response to a static JSON file and serves that. The dynamic e
 
 ## Version compatibility
 
-Live! is versioned independently of this spec and **the API is not stable across patch releases**. Check `app_version` in `_heartbeat.json` before trusting this document - but check the response shape too where you can, since `app_version` is only a string in `package.json` and a deployment can drift from it, [as one already has](#known-deployments).
+Live! is versioned independently of this spec and **the API is not stable across patch releases**. Check `app_version` in `_heartbeat.json` before trusting this document - but check the response shape too where you can, since `app_version` is only a string in `package.json` and a deployment can drift from it (see [Notes](#notes)).
 
-There is one spec per **distinct response shape**, named for the earliest release that produces it, because the shapes differ enough that a single document would have to caveat almost every field.
+There is one spec per **distinct response shape**, named for the earliest release that produces it, because the shapes differ enough that a single document would have to caveat almost every field. 1.9.14 through 1.9.17 are one shape with a handful of field-level differences called out inline (see the [changelog](#changelog)); 3.0 is a different API, not a revision of 1.9.
 
 | Live! version     | Spec                  | Status                                                                      |
 | ----------------- | --------------------- | --------------------------------------------------------------------------- |
-| **1.9.14–1.9.16** | `openapi-1.9.14.yaml` | Complete. All 13 endpoints, verified against source and live data.          |
-| **1.9.17**        | `openapi-1.9.17.yaml` | Complete. All 13 endpoints, verified against four deployments.              |
-| **3.0.6**         | `openapi-3.0.6.yaml`  | Complete. Both transports, verified against WUCC 2026.                      |
+| **1.9.14–1.9.17** | `openapi-1.9.14.yaml` | Complete. All 13 endpoints, derived from source.                            |
+| **3.0.6**         | `openapi-3.0.6.yaml`  | Complete. Both transports, derived from source.                             |
 | 1.8.x and older   | -                     | Not covered, see [Legacy deployments](#legacy-and-unsupported-deployments). |
 | 2.x               | -                     | Not covered. Not seen on any live deployment.                               |
+
+Cross-checked against real captures where possible - the archived JSON in [ultimate-tournament-results](https://github.com/cxd309/ultimate-tournament-results) covers every deployment known.
 
 ## Changelog
 
@@ -48,43 +49,13 @@ Live! 3 runs on UltiOrganizer 4 and is a different API, not a revision of 1.9.
 | Real error codes                          | `400`, `403` and `503` (HTML, not JSON), all from the routed endpoint. `live/api.php` now returns 404.                                |
 | `{seasonId}_config.json` gone             | `config` and `hb` are not cached to disk on 3.0 and are routed-only.                                                                  |
 
-**Static files are on notice.** Live!'s own documentation calls them an internal cache rather than an interface, and deletes them once the event stops being publicly available. The routed endpoint is the stable one, but sends no CORS headers - so browser clients still have only the static files, and should expect them to vanish after the event.
+## Archived tournaments
 
-### 1.9.17
-
-| Change                             | What it means                                                                                                       |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `teams[].reg_id` added             | Team registration id, now on the teams endpoint too. Always sent, `null` when the team has none.                    |
-| `games[].time_utc` added           | UTC start time on every scheduled game. Use it instead of `season.utcOffset`, which is wrong across a clock change. |
-| `seed.sotg_token` removed          | The team's private spirit-submission token is no longer published.                                                  |
-| Heartbeat keeps its `config` block | Clearing the cache no longer strips `config`, which used to leave clients with no season id and no base path.       |
-| Heartbeat sent with `no-cache`     | Config changes are picked up immediately instead of sitting in a browser cache.                                     |
-
-## Known deployments
-
-Values are read from each site's own `_heartbeat.json` and `_reference.json`. Season id casing varies and must be used verbatim. Tournament date is `season.starttime`-`season.endtime`, both local dates inclusive - note `endtime` is midnight on the last day, not its end.
-
-| Event                    | Tournament start date | Host                                  | Live!   | Season id   | Base path               | Accessed   |
-| ------------------------ | --------------------- | ------------------------------------- | ------- | ----------- | ----------------------- | ---------- |
-| WMUCC 2026               | 2026-06-28            | `wmucc.wfdf.sport`                    | 1.9.17  | `wmucc2026` | `/live/data/`           | 2026-08-27 |
-| WJUC 2026                | 2026-07-11            | `wjuc.wfdf.sport`                     | 1.9.17  | `wjuc2026`  | `/live/data/`           | 2026-08-27 |
-| EYUC U17 2026 Vienna     | 2026-08-03            | `eyuc-schedule.ultimatefederation.eu` | 1.9.17  | `26EYUCVIE` | `/live/data/`           | 2026-08-27 |
-| Elite Invite 2026 Leuven | 2026-05-23            | `elite-invite.ultimatefederation.eu`  | 1.9.17  | `26ELITLEU` | `/live/data/`           | 2026-08-27 |
-| UKU Nationals 2026       | 2026-09-05            | `uku-schedule.ultimatefederation.eu`  | 1.9.17¹ | `26UKUNATS` | `/live/data/`           | 2026-09-01 |
-| EUIC 2026                | 2026-01-29            | `euic-schedule.ultimatefederation.eu` | 1.9.16  | `euic2026`  | `/live/data/`           | 2026-08-27 |
-| PAUC 2025                | 2025-12-01            | `results.pauc.sport`                  | 1.9.15  | `pauc2025`  | `/live/data/`           | 2026-08-27 |
-| WBUC 2025                | 2025-11-16            | `wbuc.wfdf.sport`                     | 1.9.14  | `wbuc2025`  | `/live/data/`           | 2026-08-27 |
-| WUCC 2026                | 2026-08-15            | `results.wfdf.sport/wucc-2026`        | 3.0.6   | `WUCC2026`  | `/wucc-2026/live/data/` | 2026-08-27 |
-
-Each spec has a reference deployment that every schema was checked against: **WBUC 2025** for 1.9.14, **WMUCC 2026** for 1.9.17, **WUCC 2026** for 3.0.6. The 1.9.17 schemas were additionally cross-checked against WJUC 2026, EYUC 2026, Elite Invite 2026 and UKU Nationals 2026.
-
-¹ UKU Nationals 2026's own heartbeat reports `app_version: 1.7.8`, which would place it below even the unsupported 1.8.x line - but every response matches 1.9.17 exactly: `teams[].reg_id` present, `games[].time_utc` present, `seed.sotg_token` gone. Checked against the plugin source (`live/api/ConstantsManager.php`), this is explained rather than coincidental - `app_version` is read straight from `live/package.json`'s `version` field on every request, with no link to which `api/*.php` is actually deployed, so a hand-patched install can serve current-generation shapes next to a stale version string. **Treat `app_version` as a hint, never a guarantee, and prefer the shape markers above when they disagree.** UKU Nationals 2026 is also the only deployment in this table probed before its event started (2026-09-05), so it is the one real-data confirmation this spec has for `status: "scheduled"` on both `season` and `games[]`.
-
-Five further deployments are known and unsupported - all five are readable, see [Legacy and unsupported deployments](#legacy-and-unsupported-deployments).
+Every deployment known to this project is catalogued and archived in [ultimate-tournament-results](https://github.com/cxd309/ultimate-tournament-results), a sister project that polls each one's API and republishes its data as a permanent, drop-in-compatible static copy.
 
 ## Repository layout
 
-- `openapi-1.9.14.yaml`, `openapi-1.9.17.yaml`, `openapi-3.0.6.yaml` - the specifications, and the only files to edit by hand
+- `openapi-1.9.14.yaml`, `openapi-3.0.6.yaml` - the specifications, and the only files to edit by hand
 - `docs/openapi-*.json` - generated by `just build`, **do not edit**
 - `docs/` - the GitHub Pages web root (branch `main`, folder `/docs`), served as-is
 
@@ -138,6 +109,10 @@ GET {base}/{seasonId}_playerevents_{playerId}.json  one player's goals and assis
 
 ### Notes
 
+- **`app_version` is a hint, not a guarantee**
+  - It is read straight from `live/package.json`'s `version` field on every request, with no link to which `api/*.php` is actually deployed
+  - A hand-patched install can therefore serve one generation's response shape next to a stale (or non-semver, or pre-release) version string
+  - Prefer the shape markers in each spec's changelog when they disagree with it - e.g. `teams[].reg_id` present, `games[].time_utc` present and `seed.sotg_token` gone all mean 1.9.17+ regardless of what `app_version` says
 - **CORS**
   - The static files above send `Access-Control-Allow-Origin: *`
   - The dynamic `index.php?view=live/api&entity=…` endpoint returns byte-identical bodies but sends no CORS headers
@@ -153,7 +128,7 @@ GET {base}/{seasonId}_playerevents_{playerId}.json  one player's goals and assis
   - Several heartbeat numbers are sent as strings (`"120"`, `"1"`)
 - **In-game `time`**
   - Values are seconds elapsed since the game clock started, not clock times
-  - Subtract `timer_paused_duration` to relate them to wall-clock
+  - On 3.0, subtract `timer_paused_duration` to relate them to wall-clock - `uo_game.timer_start`/`timer_pause_start`/`timer_paused_duration` are a UltiOrganizer 4 addition with no equivalent on 1.9, which stores no clock start/pause state at all
 - **Numeric strings are coerced to numbers**
   - Except for `name`, `fieldname`, `abbreviation`, `cache_version` and `app_version`, plus `pools` on 3.0
   - This is why `games[].name` arrives as `"534"` rather than `534`, and `games[].pools` as `"1016"`
@@ -202,9 +177,9 @@ GET {base}/{seasonId}_playerevents_{playerId}.json  one player's goals and assis
   - So a `_players_{N}.json`, if one has ever been requested, holds the _entire_ player list rather than one player
   - Likewise `_statistics.json` with no id resolves to series `0` and is always empty
 - **Some fields depend on the deployment, not on the Live! version**
-  - `series[].slug` appears only for divisions listed in the install's own `LIVE_SERIES_SLUGS` map, which is empty by default
-  - `games[].ssdata`, `hasstarted` and `show_spirit` are extra `uo_game` columns on some installs, surfaced because the games query selects the whole row - on 3.0 `hasstarted` and `show_spirit` are core fields rather than install quirks
-  - Expect others this spec does not list, and never treat any of them as guaranteed by a release
+  - `series[].slug` appears only for divisions listed in the install's own `LIVE_SERIES_SLUGS` map, which is empty by default - it's Live!'s own field, just conditionally populated, so it's documented
+  - The games query selects the whole `uo_game` row, so an install whose UltiOrganizer table has been extended sends its extra columns too (`ssdata` streaming metadata is one seen in the wild) - these aren't Live!'s own fields and aren't part of this spec, whatever shape they happen to take on a given install
+  - On 3.0, `hasstarted` and `show_spirit` are core fields rather than install quirks, and are documented there
 - **Not every entity becomes a static file**
   - `hb` and `wipe` are routed but were 404 as static files on every deployment checked
   - `config_static` is a redirect to `_heartbeat.json`, not data
@@ -212,24 +187,15 @@ GET {base}/{seasonId}_playerevents_{playerId}.json  one player's goals and assis
 
 ## Legacy and unsupported deployments
 
-Five known deployments are outside the supported set. Probed 2026-08-27 and every one serves the same response shape this spec documents, and none carry a field the 1.9.14 schema does not already describe. What varies is how you _find_ the data, not what comes back.
+A handful of known deployments serve the same response shape this spec documents but don't follow its normal conventions, because they predate one or more of: prefixed filenames, a discoverable season id in the heartbeat, or CORS at all. Their `app_version` values also tend to be build stamps or `dev` rather than a release, so they can't be version-matched by that field either - only by the shape markers described in the [changelog](#changelog).
 
-Their `app_version` values are build stamps or `dev` rather than releases, so none can be version-matched. The shape markers place all five on the **1.9.14–1.9.16** line: `seed.sotg_token` present, `teams[].reg_id` and `games[].time_utc` absent.
-
-| Event                                                                                   | Tournament start date | `app_version`     | Season id   | Data base path           | Filenames  | CORS | Heartbeat            | What blocks it           |
-| --------------------------------------------------------------------------------------- | --------------------- | ----------------- | ----------- | ------------------------ | ---------- | ---- | -------------------- | ------------------------ |
-| [EBUCC 2025](https://live.ebucc.eu/live/data/reference.json)                            | 2025-06-06            | `20250612.082841` | `ebucc2025` | `/live/data/`            | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
-| [EBUCC 2023](https://live.ebucc.eu/scores2023/live/data/reference.json)                 | 2023-06-09            | `20250612.082841` | `EBUCC2023` | `/scores2023/live/data/` | unprefixed | `*`  | full, with `config`  | unprefixed filenames     |
-| [EUCF 2025 Wroclaw](https://eucf.ultimatefederation.eu/live/data/e2cf25_reference.json) | 2025-09-26            | `1.8.2`           | `e2cf25`    | `/live/data/`            | prefixed   | `*`  | no `config` block    | season id undiscoverable |
-| [WBUCC 2024](https://live.wbucc.org/live/data/reference.json)                           | 2024-10-14            | `20241019.151221` | _(none)_    | `/live/data/`            | unprefixed | none | embedded in the HTML | no CORS                  |
-| [WWUC 2025](https://results.wfdf.sport/wwuc/live/data/WWUC2025_reference.json)          | 2025-09-18            | `dev`             | `WWUC2025`  | `/wwuc/live/data/`       | prefixed   | `*`  | full, with `config`  | `app_version` only       |
-
-EUCF 2025 and WBUCC 2024 serve a heartbeat with no `config` block, which is the same state the pre-1.9.17 bug in the [changelog](#1917) leaves a site in. Whether that is the cause here is unconfirmed: both run builds older than any release I have source for, so they may simply predate the feature. Either way the season id has to come from somewhere else - EUCF 2025's (`e2cf25`) is readable from `LIVE_SEASON_ID` in the SPA HTML at `/?view=live/index`.
+For the current list of these, what specifically each one deviates on, and an archived copy of their data regardless, see [ultimate-tournament-results](https://github.com/cxd309/ultimate-tournament-results#legacy-deployments), which handles them with two additive flags on its own archiving tool.
 
 ## Related
 
 - [Live! by BULA](https://beachultimate.org/livebybula/) - the software this API belongs to ([install guide and releases](https://github.com/layoutd/live-by-bula))
 - [UltiOrganizer](https://github.com/ktolonen/ultiorganizer) - the tournament software underneath
+- [ultimate-tournament-results](https://github.com/cxd309/ultimate-tournament-results) - archives every known deployment's data as a permanent, drop-in-compatible copy of this API
 
 ## Licence
 
